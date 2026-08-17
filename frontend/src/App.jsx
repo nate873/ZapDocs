@@ -22,6 +22,7 @@ const FIELD_GROUPS = [
       ["CLOSING_DATE", "Closing Date"],
       ["FIRST_PAYMENT", "First Payment Date"],
       ["MATURITY_DATE", "Maturity Date"],
+      ["SERVICING_DATE", "Servicing Agreement Date (e.g. August 11, 2026)"],
     ],
   },
   {
@@ -60,6 +61,7 @@ const FIELD_GROUPS = [
       ["LENDER", "Lender (as it appears in body text)"],
       ["LENDER_NAME", "Lender Name (short form)"],
       ["LENDER_ADDRESS", "Lender Address"],
+      ["LENDER_OWNERSHIP", "Lender Ownership % (e.g. 57.16%)"],
     ],
   },
 ];
@@ -80,7 +82,9 @@ export default function App() {
   const [labelInput, setLabelInput] = useState("");
   const [saveStatus, setSaveStatus] = useState("idle"); // idle | saving | saved | error
   const [genStatus, setGenStatus] = useState("idle"); // idle | generating | error
+  const [lenderInstStatus, setLenderInstStatus] = useState("idle"); // idle | generating | error
   const [errorMsg, setErrorMsg] = useState("");
+  const [lenderInstErrorMsg, setLenderInstErrorMsg] = useState("");
   const [loadingList, setLoadingList] = useState(true);
 
   const refreshList = useCallback(async () => {
@@ -161,18 +165,23 @@ export default function App() {
     }
   }
 
+  async function saveActiveLoan() {
+    // Shared helper: persist current fields before either generate action,
+    // so the downloaded doc(s) always match what's on screen.
+    await fetch(`/api/loans/${activeId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields, label: labelInput }),
+    });
+    await refreshList();
+  }
+
   async function handleGenerate() {
     if (!activeId) return;
     setGenStatus("generating");
     setErrorMsg("");
     try {
-      // Save first so the generated docs match what's on screen
-      await fetch(`/api/loans/${activeId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fields, label: labelInput }),
-      });
-      await refreshList();
+      await saveActiveLoan();
 
       const res = await fetch(`/api/loans/${activeId}/generate`, {
         method: "POST",
@@ -200,8 +209,75 @@ export default function App() {
     }
   }
 
+  async function handleGenerateLenderInstructions() {
+    if (!activeId) return;
+    setLenderInstStatus("generating");
+    setLenderInstErrorMsg("");
+    try {
+      await saveActiveLoan();
+
+      const res = await fetch(
+        `/api/loans/${activeId}/generate-lender-instructions`,
+        { method: "POST" }
+      );
+      if (!res.ok) {
+        let message = `Server responded ${res.status}`;
+        try {
+          const data = await res.json();
+          message = data.error || message;
+        } catch {
+          const text = await res.text();
+          if (text) message = text;
+        }
+        throw new Error(message);
+      }
+
+      const blob = await res.blob();
+      const loanNumber = fields.LOAN_NUMBER || "loan";
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Lender_Instructions_Loan_${loanNumber}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+      setLenderInstStatus("idle");
+    } catch (err) {
+      setLenderInstStatus("error");
+      setLenderInstErrorMsg(
+        err.message || "Something went wrong generating lender instructions."
+      );
+    }
+  }
+
   return (
     <div className="app-shell">
+      <style>{`
+        .lender-inst-btn {
+          padding: 10px 20px;
+          border-radius: 999px;
+          border: 1.5px solid #d6dbe4;
+          background: #ffffff;
+          color: #3452eb;
+          font-weight: 600;
+          font-size: 14px;
+          cursor: pointer;
+          transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+        }
+        .lender-inst-btn:hover:not(:disabled) {
+          background: #eef1ff;
+          border-color: #3452eb;
+        }
+        .lender-inst-btn:active:not(:disabled) {
+          background: #e2e7ff;
+        }
+        .lender-inst-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+      `}</style>
       <aside className="sidebar">
         <div className="sidebar-header">
           <p className="eyebrow">Action Funding</p>
@@ -340,14 +416,30 @@ export default function App() {
               >
                 {genStatus === "generating" ? "Generating…" : "Generate documents"}
               </button>
+              <button
+                className="lender-inst-btn"
+                onClick={handleGenerateLenderInstructions}
+                disabled={lenderInstStatus === "generating"}
+              >
+                {lenderInstStatus === "generating"
+                  ? "Generating…"
+                  : "Generate lender instructions"}
+              </button>
               <span className="submit-note">
-                Downloads a .zip with all four filled-in Word files.
+                "Generate documents" downloads the full .zip package.
+                "Generate lender instructions" downloads just the servicing
+                agreement as a single Word file.
               </span>
             </div>
 
             {genStatus === "error" && (
               <p className="error-msg" role="alert">
                 {errorMsg}
+              </p>
+            )}
+            {lenderInstStatus === "error" && (
+              <p className="error-msg" role="alert">
+                {lenderInstErrorMsg}
               </p>
             )}
           </>

@@ -32,9 +32,18 @@ TEMPLATES_BY_STATE = {
     "CA": {
         "Note": "ca_note_template.docx",
         "Deed of Trust": "deed_of_trust_template.docx",
+        "Servicing": "ca_servicing_template.docx",
         "Boiler": "ca_boiler_template.docx",
         "Oral Disclosure": "oral_disclosure_ca_template.docx",
     },
+}
+
+# Which doc in each state's package is the "lender instructions" /
+# servicing document — the one a lender needs on its own, separate from
+# the full closing package. Used by the standalone generate button.
+LENDER_INSTRUCTIONS_DOC_KEY = {
+    "FL": "Agreement",
+    "CA": "Servicing",
 }
 
 ALL_FIELDS = [
@@ -42,12 +51,13 @@ ALL_FIELDS = [
     "LOAN_NUMBER", "LOAN_AMOUNT", "INTEREST_RATE", "MONTHLY_PAYMENT",
     "BALLOON_PAYMENT", "COMMISSION", "DEFAULT_RATE",
     "NOTE_DATE", "CLOSING_DATE", "FIRST_PAYMENT", "MATURITY_DATE",
+    "SERVICING_DATE",
     "PROPERTY_ADDRESS", "PROPERTY_CITY", "PROPERTY_STATE", "PROPERTY_ZIP",
     "COUNTY", "APN", "TITLE_NUMBER", "TRUSTEE", "CITY", "INTEREST_COMMENCE",
     "LOAN_POSITION", "PROPERTY_TYPE", "TAX_ID", "BORROWER_1", "BORROWER_2",
     "VESTING", "MAILING_ADDRESS", "SIGNATURE_FOOTER", "SIGNATURE_TITLE",
     "SIGNATURE_FOOTER_2", "SIGNATURE_TITLE_2",
-    "LENDER", "LENDER_NAME", "LENDER_ADDRESS",
+    "LENDER", "LENDER_NAME", "LENDER_ADDRESS", "LENDER_OWNERSHIP",
 ]
 
 CURRENCY_FIELDS = [
@@ -173,6 +183,11 @@ def build_context(fields):
     # The CA Boiler package uses FIRST_PAYMENT_DATE where other docs use FIRST_PAYMENT
     context["FIRST_PAYMENT_DATE"] = context.get("FIRST_PAYMENT", "")
 
+    # The CA Servicing Agreement uses SERVICING_DATE for its dateline; fall back
+    # to NOTE_DATE if it wasn't entered separately, so existing loans still render.
+    if not context.get("SERVICING_DATE"):
+        context["SERVICING_DATE"] = context.get("NOTE_DATE", "")
+
     return context
 
 
@@ -288,6 +303,50 @@ def generate(loan_id):
         as_attachment=True,
         download_name=zip_name,
         mimetype="application/zip",
+    )
+
+
+# =====================
+# API: GENERATE LENDER INSTRUCTIONS ONLY (single .docx, not a zip)
+# =====================
+
+@app.route("/api/loans/<loan_id>/generate-lender-instructions", methods=["POST"])
+def generate_lender_instructions(loan_id):
+    with _lock:
+        loans = load_loans()
+    if loan_id not in loans:
+        return jsonify({"error": "Loan not found"}), 404
+
+    fields = loans[loan_id].get("fields", {})
+    context = build_context(fields)
+    loan_number = context.get("LOAN_NUMBER") or "loan"
+
+    state = (fields.get("STATE") or "FL").strip().upper()
+    if state not in TEMPLATES_BY_STATE:
+        state = "FL"
+
+    doc_key = LENDER_INSTRUCTIONS_DOC_KEY.get(state)
+    template_file = TEMPLATES_BY_STATE.get(state, {}).get(doc_key) if doc_key else None
+
+    if not template_file:
+        return jsonify({
+            "error": f"No lender instructions template is configured for {state}."
+        }), 400
+
+    doc = DocxTemplate(str(BASE_DIR / template_file))
+    doc.render(context)
+
+    doc_buffer = io.BytesIO()
+    doc.save(doc_buffer)
+    doc_buffer.seek(0)
+
+    filename = f"Lender_Instructions_Loan_{loan_number}.docx"
+
+    return send_file(
+        doc_buffer,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
 
 
