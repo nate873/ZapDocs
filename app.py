@@ -35,6 +35,8 @@ TEMPLATES_BY_STATE = {
         "Servicing": "ca_servicing_template.docx",
         "Boiler": "ca_boiler_template.docx",
         "Oral Disclosure": "oral_disclosure_ca_template.docx",
+        # Lender disclosure statement — CA only for now.
+        "Lender Disclosure": "lender_disclosure_template.docx",
     },
 }
 
@@ -44,6 +46,12 @@ TEMPLATES_BY_STATE = {
 LENDER_INSTRUCTIONS_DOC_KEY = {
     "FL": "Agreement",
     "CA": "Servicing",
+}
+
+# Which doc in each state's package is the standalone "lender disclosure"
+# document. CA only — states without an entry here will 400 if requested.
+LENDER_DISCLOSURE_DOC_KEY = {
+    "CA": "Lender Disclosure",
 }
 
 ALL_FIELDS = [
@@ -58,6 +66,10 @@ ALL_FIELDS = [
     "VESTING", "MAILING_ADDRESS", "SIGNATURE_FOOTER", "SIGNATURE_TITLE",
     "SIGNATURE_FOOTER_2", "SIGNATURE_TITLE_2",
     "LENDER", "LENDER_NAME", "LENDER_ADDRESS", "LENDER_OWNERSHIP",
+    # Lender Disclosure (CA) fields
+    "LOAN_TERM", "LTV", "MARKET_VALUE", "CURRENT_ENCUMBRANCE",
+    "FUTURE_ENCUMBRANCE", "FUTURE_EQUITY", "GROSS_INCOME", "GROSS_SALARY",
+    "MONTHLY_EXPENSES", "ESCROW_NAME", "ESCROW_ADDRESS",
 ]
 
 CURRENCY_FIELDS = [
@@ -66,6 +78,13 @@ CURRENCY_FIELDS = [
     "BALLOON_PAYMENT",
     "COMMISSION",
     "PREPAID_INTEREST",
+    "MARKET_VALUE",
+    "CURRENT_ENCUMBRANCE",
+    "FUTURE_ENCUMBRANCE",
+    "FUTURE_EQUITY",
+    "GROSS_INCOME",
+    "GROSS_SALARY",
+    "MONTHLY_EXPENSES",
 ]
 
 
@@ -341,6 +360,52 @@ def generate_lender_instructions(loan_id):
     doc_buffer.seek(0)
 
     filename = f"Lender_Instructions_Loan_{loan_number}.docx"
+
+    return send_file(
+        doc_buffer,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+
+# =====================
+# API: GENERATE LENDER DISCLOSURE ONLY (single .docx, not a zip)
+# CA only — the disclosure statement template currently only exists for CA.
+# =====================
+
+@app.route("/api/loans/<loan_id>/generate-disclosure", methods=["POST"])
+def generate_disclosure(loan_id):
+    with _lock:
+        loans = load_loans()
+    if loan_id not in loans:
+        return jsonify({"error": "Loan not found"}), 404
+
+    fields = loans[loan_id].get("fields", {})
+    context = build_context(fields)
+    loan_number = context.get("LOAN_NUMBER") or "loan"
+
+    state = (fields.get("STATE") or "FL").strip().upper()
+    if state not in TEMPLATES_BY_STATE:
+        state = "FL"
+
+    doc_key = LENDER_DISCLOSURE_DOC_KEY.get(state)
+    template_file = TEMPLATES_BY_STATE.get(state, {}).get(doc_key) if doc_key else None
+
+    if not template_file:
+        return jsonify({
+            "error": f"No lender disclosure template is configured for {state}. "
+                     f"This document is currently only available for CA loans."
+        }), 400
+
+    doc = DocxTemplate(str(BASE_DIR / template_file))
+    doc.render(context)
+
+    doc_buffer = io.BytesIO()
+    doc.save(doc_buffer)
+    doc_buffer.seek(0)
+
+    filename = f"Lender_Disclosure_Loan_{loan_number}.docx"
 
     return send_file(
         doc_buffer,

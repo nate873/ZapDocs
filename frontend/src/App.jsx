@@ -64,6 +64,22 @@ const FIELD_GROUPS = [
       ["LENDER_OWNERSHIP", "Lender Ownership % (e.g. 57.16%)"],
     ],
   },
+  {
+    name: "Disclosure (CA only)",
+    fields: [
+      ["LOAN_TERM", "Loan Term (e.g. 36 months)"],
+      ["LTV", "Loan-to-Value % (e.g. 65%)"],
+      ["MARKET_VALUE", "Estimated Market Value ($)"],
+      ["CURRENT_ENCUMBRANCE", "Current Encumbrance ($)"],
+      ["FUTURE_ENCUMBRANCE", "Encumbrance After This Loan ($)"],
+      ["FUTURE_EQUITY", "Borrower's Equity After This Loan ($)"],
+      ["GROSS_INCOME", "Borrower Gross Income ($)"],
+      ["GROSS_SALARY", "Borrower Gross Salary ($)"],
+      ["MONTHLY_EXPENSES", "Borrower Monthly Expenses ($)"],
+      ["ESCROW_NAME", "Escrow Holder Name"],
+      ["ESCROW_ADDRESS", "Escrow Holder Address"],
+    ],
+  },
 ];
 
 const ALL_FIELDS = FIELD_GROUPS.flatMap((g) => g.fields.map((f) => f[0]));
@@ -83,8 +99,10 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState("idle"); // idle | saving | saved | error
   const [genStatus, setGenStatus] = useState("idle"); // idle | generating | error
   const [lenderInstStatus, setLenderInstStatus] = useState("idle"); // idle | generating | error
+  const [disclosureStatus, setDisclosureStatus] = useState("idle"); // idle | generating | error
   const [errorMsg, setErrorMsg] = useState("");
   const [lenderInstErrorMsg, setLenderInstErrorMsg] = useState("");
+  const [disclosureErrorMsg, setDisclosureErrorMsg] = useState("");
   const [loadingList, setLoadingList] = useState(true);
 
   const refreshList = useCallback(async () => {
@@ -248,6 +266,49 @@ export default function App() {
       setLenderInstStatus("error");
       setLenderInstErrorMsg(
         err.message || "Something went wrong generating lender instructions."
+      );
+    }
+  }
+
+  async function handleGenerateDisclosure() {
+    if (!activeId) return;
+    setDisclosureStatus("generating");
+    setDisclosureErrorMsg("");
+    try {
+      await saveActiveLoan();
+
+      const res = await fetch(
+        `/api/loans/${activeId}/generate-disclosure`,
+        { method: "POST" }
+      );
+      if (!res.ok) {
+        let message = `Server responded ${res.status}`;
+        try {
+          const data = await res.json();
+          message = data.error || message;
+        } catch {
+          const text = await res.text();
+          if (text) message = text;
+        }
+        throw new Error(message);
+      }
+
+      const blob = await res.blob();
+      const loanNumber = fields.LOAN_NUMBER || "loan";
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Lender_Disclosure_Loan_${loanNumber}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+      setDisclosureStatus("idle");
+    } catch (err) {
+      setDisclosureStatus("error");
+      setDisclosureErrorMsg(
+        err.message || "Something went wrong generating the disclosure document."
       );
     }
   }
@@ -423,12 +484,22 @@ export default function App() {
               >
                 {lenderInstStatus === "generating"
                   ? "Generating…"
-                  : "Generate lender instructions"}
+                  : "Generate lender documents"}
+              </button>
+              <button
+                className="lender-inst-btn"
+                onClick={handleGenerateDisclosure}
+                disabled={disclosureStatus === "generating"}
+              >
+                {disclosureStatus === "generating"
+                  ? "Generating…"
+                  : "Generate disclosure"}
               </button>
               <span className="submit-note">
                 "Generate documents" downloads the full .zip package.
-                "Generate lender instructions" downloads just the servicing
-                agreement as a single Word file.
+                "Generate lender documents" downloads just the servicing
+                agreement as a single Word file. "Generate disclosure"
+                downloads the lender disclosure statement (CA loans only).
               </span>
             </div>
 
@@ -440,6 +511,11 @@ export default function App() {
             {lenderInstStatus === "error" && (
               <p className="error-msg" role="alert">
                 {lenderInstErrorMsg}
+              </p>
+            )}
+            {disclosureStatus === "error" && (
+              <p className="error-msg" role="alert">
+                {disclosureErrorMsg}
               </p>
             )}
           </>
