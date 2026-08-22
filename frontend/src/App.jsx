@@ -26,6 +26,15 @@ const FIELD_GROUPS = [
     ],
   },
   {
+    name: "Prepayment (FL Note, Sec. 5)",
+    fields: [
+      ["PREPAID_PAYMENTS", "Prepaid Payments Total ($)"],
+      ["FIRST_PREPAID_MONTH", "First Prepaid Month (e.g. September 2026)"],
+      ["LAST_PREPAID_MONTH", "Last Prepaid Month (e.g. February 2027)"],
+      ["FIRST_PAYMENT_DUE", "First Payment Due to Servicer (date)"],
+    ],
+  },
+  {
     name: "Property",
     fields: [
       ["PROPERTY_ADDRESS", "Property Address (full)"],
