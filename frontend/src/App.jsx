@@ -8,7 +8,7 @@ const FIELD_GROUPS = [
       ["LOAN_AMOUNT", "Loan Amount ($)"],
       ["INTEREST_RATE", "Interest Rate (%)"],
       ["MONTHLY_PAYMENT", "Monthly Payment ($)"],
-      ["TERM", "Term (months)"],
+      ["LOAN_TERM", "Loan Term (e.g. 36 months)"],
       ["BALLOON_PAYMENT", "Balloon Payment ($)"],
       ["COMMISSION", "Commission ($)"],
       ["DEFAULT_RATE", "Default Rate (%)"],
@@ -76,7 +76,6 @@ const FIELD_GROUPS = [
   {
     name: "Disclosure (CA only)",
     fields: [
-      ["LOAN_TERM", "Loan Term (e.g. 36 months)"],
       ["LTV", "Loan-to-Value % (e.g. 65%)"],
       ["MARKET_VALUE", "Estimated Market Value ($)"],
       ["CURRENT_ENCUMBRANCE", "Current Encumbrance ($)"],
