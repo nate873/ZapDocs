@@ -28,6 +28,7 @@ TEMPLATES_BY_STATE = {
         "Boiler": "boiler_template.docx",
         "Mortgage": "template_mortgage.docx",
         "Oral Disclosure": "oral_disclosure_fl_template.docx",
+        "Guaranty": "guaranty_template.docx",
     },
     "CA": {
         "Note": "ca_note_template.docx",
