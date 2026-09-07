@@ -58,6 +58,7 @@ LENDER_DISCLOSURE_DOC_KEY = {
 ALL_FIELDS = [
     "STATE",
     "LOAN_NUMBER", "LOAN_AMOUNT", "INTEREST_RATE", "MONTHLY_PAYMENT",
+    "NUMBER_OF_PAYMENTS",
     "BALLOON_PAYMENT", "COMMISSION", "DEFAULT_RATE",
     "NOTE_DATE", "CLOSING_DATE", "FIRST_PAYMENT", "MATURITY_DATE",
     "SERVICING_DATE",
@@ -107,6 +108,10 @@ CURRENCY_FIELDS = [
 #
 # The two tag rows are removed at render time. row.START is also available
 # if the template keeps "Monthly Beginning" as literal text in the cell.
+#
+# A template that still uses the older fixed two-row table works too — that
+# version reads the flat NUMBER_OF_PAYMENTS / MONTHLY_PAYMENT / INTEREST_RATE
+# fields instead, and simply ignores PAYMENT_ROWS.
 # =====================
 
 PAYMENT_ROW_FIELDS = ["COUNT", "START", "DESCRIPTION", "RATE", "AMOUNT"]
@@ -350,6 +355,11 @@ def build_context(fields):
 
     # The CA Boiler package uses FIRST_PAYMENT_DATE where other docs use FIRST_PAYMENT
     context["FIRST_PAYMENT_DATE"] = context.get("FIRST_PAYMENT", "")
+
+    # The CA Note's payments table has {{MONTLY_PAYMENT}} misspelled in the
+    # template. Alias it so that cell fills in without having to retype the
+    # tag in Word. Fix the template when convenient and this can go away.
+    context["MONTLY_PAYMENT"] = context.get("MONTHLY_PAYMENT", "")
 
     # The CA Servicing Agreement uses SERVICING_DATE for its dateline; fall back
     # to NOTE_DATE if it wasn't entered separately, so existing loans still render.

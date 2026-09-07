@@ -8,6 +8,7 @@ const FIELD_GROUPS = [
       ["LOAN_AMOUNT", "Loan Amount ($)"],
       ["INTEREST_RATE", "Interest Rate (%)"],
       ["MONTHLY_PAYMENT", "Monthly Payment ($)"],
+      ["NUMBER_OF_PAYMENTS", "Number of Payments (Note table)"],
       ["LOAN_TERM", "Loan Term (e.g. 36 months)"],
       ["BALLOON_PAYMENT", "Balloon Payment ($)"],
       ["COMMISSION", "Commission ($)"],
