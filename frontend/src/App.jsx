@@ -92,10 +92,20 @@ const FIELD_GROUPS = [
 
 const ALL_FIELDS = FIELD_GROUPS.flatMap((g) => g.fields.map((f) => f[0]));
 
+// One entry per row of the PAYMENTS table in the Note (Section 3).
+const PAYMENT_ROW_FIELDS = ["COUNT", "START", "DESCRIPTION", "RATE", "AMOUNT"];
+
+function emptyPaymentRow() {
+  const row = {};
+  PAYMENT_ROW_FIELDS.forEach((name) => (row[name] = ""));
+  return row;
+}
+
 function emptyFields() {
   const obj = {};
   ALL_FIELDS.forEach((name) => (obj[name] = ""));
   obj.STATE = "FL";
+  obj.PAYMENT_ROWS = [emptyPaymentRow()];
   return obj;
 }
 
@@ -112,6 +122,8 @@ export default function App() {
   const [lenderInstErrorMsg, setLenderInstErrorMsg] = useState("");
   const [disclosureErrorMsg, setDisclosureErrorMsg] = useState("");
   const [loadingList, setLoadingList] = useState(true);
+
+  const paymentRows = fields.PAYMENT_ROWS || [];
 
   const refreshList = useCallback(async () => {
     const res = await fetch("/api/loans");
@@ -136,7 +148,13 @@ export default function App() {
     const res = await fetch(`/api/loans/${id}`);
     if (!res.ok) return;
     const data = await res.json();
-    setFields({ ...emptyFields(), ...data.fields });
+    const incoming = { ...emptyFields(), ...data.fields };
+    // A loan saved before the payments table existed comes back with an empty
+    // list — show one blank row so there's something to type into.
+    if (!Array.isArray(incoming.PAYMENT_ROWS) || incoming.PAYMENT_ROWS.length === 0) {
+      incoming.PAYMENT_ROWS = [emptyPaymentRow()];
+    }
+    setFields(incoming);
     setLabelInput(data.label || "");
     setSaveStatus("idle");
   }
@@ -170,6 +188,42 @@ export default function App() {
   function handleChange(name, value) {
     setFields((prev) => ({ ...prev, [name]: value }));
   }
+
+  // ---- Payment schedule rows ----
+
+  function handleRowChange(index, key, value) {
+    setFields((prev) => {
+      const rows = [...(prev.PAYMENT_ROWS || [])];
+      rows[index] = { ...rows[index], [key]: value };
+      return { ...prev, PAYMENT_ROWS: rows };
+    });
+  }
+
+  function handleAddRow() {
+    setFields((prev) => ({
+      ...prev,
+      PAYMENT_ROWS: [...(prev.PAYMENT_ROWS || []), emptyPaymentRow()],
+    }));
+  }
+
+  function handleRemoveRow(index) {
+    setFields((prev) => {
+      const rows = (prev.PAYMENT_ROWS || []).filter((_, i) => i !== index);
+      return { ...prev, PAYMENT_ROWS: rows.length ? rows : [emptyPaymentRow()] };
+    });
+  }
+
+  function handleMoveRow(index, direction) {
+    setFields((prev) => {
+      const rows = [...(prev.PAYMENT_ROWS || [])];
+      const target = index + direction;
+      if (target < 0 || target >= rows.length) return prev;
+      [rows[index], rows[target]] = [rows[target], rows[index]];
+      return { ...prev, PAYMENT_ROWS: rows };
+    });
+  }
+
+  // ---- Save / generate ----
 
   async function handleSave() {
     if (!activeId) return;
@@ -346,6 +400,107 @@ export default function App() {
           opacity: 0.6;
           cursor: not-allowed;
         }
+
+        /* ---- Payment schedule table editor ---- */
+        .pay-note {
+          margin: 0 0 14px;
+          font-size: 13px;
+          line-height: 1.5;
+          color: #5b6472;
+        }
+        .pay-grid {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .pay-row {
+          display: grid;
+          grid-template-columns: 0.7fr 0.9fr 1.6fr 0.7fr 0.9fr 62px;
+          gap: 8px;
+          align-items: center;
+        }
+        .pay-head {
+          font-size: 12px;
+          font-weight: 600;
+          letter-spacing: 0.02em;
+          text-transform: uppercase;
+          color: #5b6472;
+        }
+        .pay-head span {
+          padding-left: 2px;
+        }
+        .pay-row input {
+          width: 100%;
+          padding: 8px 10px;
+          border: 1px solid #d6dbe4;
+          border-radius: 8px;
+          font-size: 14px;
+          font-family: inherit;
+          box-sizing: border-box;
+        }
+        .pay-row input:focus {
+          outline: none;
+          border-color: #3452eb;
+          box-shadow: 0 0 0 3px rgba(52, 82, 235, 0.12);
+        }
+        .pay-row-tools {
+          display: flex;
+          gap: 4px;
+          justify-content: flex-end;
+        }
+        .pay-icon-btn {
+          width: 26px;
+          height: 28px;
+          padding: 0;
+          border: 1px solid #d6dbe4;
+          border-radius: 6px;
+          background: #fff;
+          color: #5b6472;
+          font-size: 13px;
+          line-height: 1;
+          cursor: pointer;
+        }
+        .pay-icon-btn:hover:not(:disabled) {
+          border-color: #3452eb;
+          color: #3452eb;
+          background: #eef1ff;
+        }
+        .pay-icon-btn:disabled {
+          opacity: 0.35;
+          cursor: not-allowed;
+        }
+        .pay-icon-btn.danger:hover {
+          border-color: #d33;
+          color: #d33;
+          background: #fdeeee;
+        }
+        .add-row-btn {
+          margin-top: 12px;
+          padding: 8px 16px;
+          border-radius: 999px;
+          border: 1.5px dashed #b9c0cc;
+          background: #fff;
+          color: #3452eb;
+          font-weight: 600;
+          font-size: 13px;
+          cursor: pointer;
+        }
+        .add-row-btn:hover {
+          border-style: solid;
+          border-color: #3452eb;
+          background: #eef1ff;
+        }
+        @media (max-width: 900px) {
+          .pay-row {
+            grid-template-columns: 1fr 1fr;
+          }
+          .pay-head {
+            display: none;
+          }
+          .pay-row-tools {
+            grid-column: 1 / -1;
+          }
+        }
       `}</style>
       <aside className="sidebar">
         <div className="sidebar-header">
@@ -464,6 +619,119 @@ export default function App() {
                   </div>
                 </fieldset>
               ))}
+
+              <fieldset>
+                <legend>Payment Schedule (Note, Sec. 3)</legend>
+                <p className="pay-note">
+                  Each line below becomes one row of the PAYMENTS table in the
+                  Note. Add as many rate tiers as the loan needs. Leave
+                  Description blank to get "Monthly Beginning 09/01/2026"
+                  automatically from the start date, or type your own wording to
+                  override it. Don't type the $ or % — those are added for you.
+                </p>
+
+                <div className="pay-grid">
+                  <div className="pay-row pay-head">
+                    <span># of Payments</span>
+                    <span>Starting</span>
+                    <span>Description (optional)</span>
+                    <span>Rate</span>
+                    <span>Payment</span>
+                    <span />
+                  </div>
+
+                  {paymentRows.map((row, index) => (
+                    <div className="pay-row" key={index}>
+                      <input
+                        type="text"
+                        autoComplete="off"
+                        aria-label={`Row ${index + 1} number of payments`}
+                        placeholder="6"
+                        value={row.COUNT || ""}
+                        onChange={(e) =>
+                          handleRowChange(index, "COUNT", e.target.value)
+                        }
+                      />
+                      <input
+                        type="text"
+                        autoComplete="off"
+                        aria-label={`Row ${index + 1} start date`}
+                        placeholder="09/01/2026"
+                        value={row.START || ""}
+                        onChange={(e) =>
+                          handleRowChange(index, "START", e.target.value)
+                        }
+                      />
+                      <input
+                        type="text"
+                        autoComplete="off"
+                        aria-label={`Row ${index + 1} description`}
+                        placeholder="Monthly Beginning 09/01/2026"
+                        value={row.DESCRIPTION || ""}
+                        onChange={(e) =>
+                          handleRowChange(index, "DESCRIPTION", e.target.value)
+                        }
+                      />
+                      <input
+                        type="text"
+                        autoComplete="off"
+                        aria-label={`Row ${index + 1} interest rate`}
+                        placeholder="6"
+                        value={row.RATE || ""}
+                        onChange={(e) =>
+                          handleRowChange(index, "RATE", e.target.value)
+                        }
+                      />
+                      <input
+                        type="text"
+                        autoComplete="off"
+                        aria-label={`Row ${index + 1} payment amount`}
+                        placeholder="1,200.00"
+                        value={row.AMOUNT || ""}
+                        onChange={(e) =>
+                          handleRowChange(index, "AMOUNT", e.target.value)
+                        }
+                      />
+                      <div className="pay-row-tools">
+                        <button
+                          type="button"
+                          className="pay-icon-btn"
+                          title="Move row up"
+                          disabled={index === 0}
+                          onClick={() => handleMoveRow(index, -1)}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className="pay-icon-btn"
+                          title="Move row down"
+                          disabled={index === paymentRows.length - 1}
+                          onClick={() => handleMoveRow(index, 1)}
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          className="pay-icon-btn danger"
+                          title="Remove row"
+                          onClick={() => handleRemoveRow(index)}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  className="add-row-btn"
+                  onClick={handleAddRow}
+                >
+                  + Add payment row
+                </button>
+              </fieldset>
             </div>
 
             <div className="action-bar">

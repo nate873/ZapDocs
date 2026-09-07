@@ -92,6 +92,44 @@ CURRENCY_FIELDS = [
     "PREPAID_PAYMENTS",
 ]
 
+# =====================
+# PAYMENT SCHEDULE TABLE (Note, Section 3)
+#
+# Unlike everything in ALL_FIELDS, this is a *list* — one entry per row of
+# the payments table, so a loan can have as many rate/payment tiers as it
+# needs. It lives in the same fields dict under the key "PAYMENT_ROWS".
+#
+# In note_template.docx the table body is a docxtpl row loop:
+#
+#   row: {%tr for row in PAYMENT_ROWS %}
+#   row: {{ row.COUNT }} | {{ row.DESCRIPTION }} | {{ row.RATE }} | {{ row.AMOUNT }}
+#   row: {%tr endfor %}
+#
+# The two tag rows are removed at render time. row.START is also available
+# if the template keeps "Monthly Beginning" as literal text in the cell.
+# =====================
+
+PAYMENT_ROW_FIELDS = ["COUNT", "START", "DESCRIPTION", "RATE", "AMOUNT"]
+
+
+def empty_payment_row():
+    return {name: "" for name in PAYMENT_ROW_FIELDS}
+
+
+def clean_payment_rows(raw):
+    """Coerce whatever came in over the wire into a list of string-only row dicts."""
+    rows = []
+    if not isinstance(raw, list):
+        return rows
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        rows.append({
+            name: str(item.get(name, "") or "").strip()
+            for name in PAYMENT_ROW_FIELDS
+        })
+    return rows
+
 
 # =====================
 # STORAGE
@@ -117,6 +155,7 @@ def save_loans(loans):
 def empty_fields():
     fields = {name: "" for name in ALL_FIELDS}
     fields["STATE"] = "FL"  # sensible default; user can switch to CA
+    fields["PAYMENT_ROWS"] = []
     return fields
 
 
@@ -196,6 +235,58 @@ def long_date(dt):
     return f"{dt.strftime('%B')} {dt.day}, {dt.year}"
 
 
+def money(value):
+    """'1200' -> '$1,200.00'. Returns the input untouched if it isn't a number."""
+    raw = str(value or "").strip().replace("$", "").replace(",", "")
+    if not raw:
+        return ""
+    try:
+        return "${:,.2f}".format(float(raw))
+    except ValueError:
+        return str(value).strip()
+
+
+def percent(value):
+    """'6' -> '6%'. Leaves an already-suffixed value alone."""
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    return raw if raw.endswith("%") else f"{raw}%"
+
+
+def build_payment_rows(fields):
+    """Turn the saved PAYMENT_ROWS into render-ready rows for the Note table."""
+    rows = []
+
+    for row in clean_payment_rows(fields.get("PAYMENT_ROWS")):
+        if not any(row.values()):
+            continue  # skip rows the user added but never filled in
+
+        start_dt = parse_date(row["START"])
+        start = start_dt.strftime("%m/%d/%Y") if start_dt else row["START"]
+
+        # Free-text Description wins; otherwise compose the usual phrasing.
+        description = row["DESCRIPTION"]
+        if not description and start:
+            description = f"Monthly Beginning {start}"
+
+        rows.append({
+            "COUNT": row["COUNT"],
+            "START": start,
+            "DESCRIPTION": description,
+            "RATE": percent(row["RATE"]),
+            "AMOUNT": money(row["AMOUNT"]),
+        })
+
+    # A loan saved before this feature existed has no rows at all. Emit one
+    # blank row so the table keeps its shape instead of collapsing to a
+    # header with nothing under it.
+    if not rows:
+        rows.append(empty_payment_row())
+
+    return rows
+
+
 def build_context(fields):
     context = {}
 
@@ -239,6 +330,20 @@ def build_context(fields):
         context["NOTE_DAY"] = ""
         context["NOTE_MONTH"] = ""
         context["NOTE_YEAR"] = ""
+
+    # Payments table (Note, Section 3)
+    payment_rows = build_payment_rows(fields)
+    context["PAYMENT_ROWS"] = payment_rows
+
+    # Handy for body text that references the schedule as a whole.
+    total = 0
+    for row in payment_rows:
+        try:
+            total += int(str(row["COUNT"]).strip())
+        except (ValueError, TypeError):
+            total = 0
+            break
+    context["TOTAL_PAYMENTS"] = str(total) if total else ""
 
     # The Deed of Trust footer uses LOAN_NAME where other docs use LOAN_NUMBER
     context["LOAN_NAME"] = context.get("LOAN_NUMBER", "")
@@ -287,7 +392,19 @@ def get_loan(loan_id):
     if loan_id not in loans:
         return jsonify({"error": "Loan not found"}), 404
     data = loans[loan_id]
-    return jsonify({"id": loan_id, "label": data.get("label", "New Loan"), "fields": data.get("fields", empty_fields())})
+
+    # Backfill keys added after this loan was first saved, so older records
+    # still come back with a complete shape.
+    fields = empty_fields()
+    saved = data.get("fields", {})
+    fields.update({k: saved.get(k, "") for k in ALL_FIELDS})
+    fields["PAYMENT_ROWS"] = clean_payment_rows(saved.get("PAYMENT_ROWS"))
+
+    return jsonify({
+        "id": loan_id,
+        "label": data.get("label", "New Loan"),
+        "fields": fields,
+    })
 
 
 @app.route("/api/loans/<loan_id>", methods=["PUT"])
@@ -303,6 +420,7 @@ def update_loan(loan_id):
 
         merged_fields = empty_fields()
         merged_fields.update({k: fields.get(k, "") for k in ALL_FIELDS})
+        merged_fields["PAYMENT_ROWS"] = clean_payment_rows(fields.get("PAYMENT_ROWS"))
 
         label = custom_label or default_label(merged_fields)
 
