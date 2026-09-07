@@ -163,6 +163,39 @@ def ordinal(n):
     return f"{n}{suffix}"
 
 
+# Accepted ways a date might get typed into the form. The Deed of Trust
+# dateline depends on NOTE_DATE parsing cleanly, so be generous here —
+# a stray missing comma used to blank the whole "made this ___ day of ___".
+DATE_FORMATS = [
+    "%B %d, %Y",   # August 11, 2026
+    "%B %d %Y",    # August 11 2026
+    "%b %d, %Y",   # Aug 11, 2026
+    "%b %d %Y",    # Aug 11 2026
+    "%m/%d/%Y",    # 08/11/2026
+    "%m/%d/%y",    # 08/11/26
+    "%m-%d-%Y",    # 08-11-2026
+    "%Y-%m-%d",    # 2026-08-11
+]
+
+
+def parse_date(value):
+    """Parse a user-entered date in any of the common formats. None if unparseable."""
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    for fmt in DATE_FORMATS:
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def long_date(dt):
+    """Render a datetime as 'August 11, 2026' (no zero-padded day)."""
+    return f"{dt.strftime('%B')} {dt.day}, {dt.year}"
+
+
 def build_context(fields):
     context = {}
 
@@ -184,8 +217,11 @@ def build_context(fields):
     except (ValueError, TypeError):
         context["SPELLED_LOAN_AMOUNT"] = ""
 
-    try:
-        note_dt = datetime.strptime(str(fields.get("NOTE_DATE", "")).strip(), "%B %d, %Y")
+    # The Deed of Trust dateline ("made this {{NOTE_DAY}} day of
+    # {{NOTE_MONTH}} {{NOTE_YEAR}}") is always driven off the note date.
+    note_dt = parse_date(fields.get("NOTE_DATE"))
+
+    if note_dt:
         context["MONTH"] = note_dt.strftime("%B")
         context["YEAR"] = note_dt.strftime("%Y")
         context["DATE"] = note_dt.strftime("%Y")
@@ -193,7 +229,10 @@ def build_context(fields):
         context["NOTE_DAY"] = ordinal(note_dt.day)
         context["NOTE_MONTH"] = note_dt.strftime("%B")
         context["NOTE_YEAR"] = note_dt.strftime("%Y")
-    except (ValueError, TypeError):
+        # Normalize however it was typed, so the note, the deed, and the rest
+        # of the package all print the date the same way.
+        context["NOTE_DATE"] = long_date(note_dt)
+    else:
         context["MONTH"] = ""
         context["YEAR"] = ""
         context["DATE"] = ""
