@@ -4,6 +4,11 @@ import json
 import uuid
 import zipfile
 import threading
+import os
+import shutil
+import subprocess
+import tempfile
+import time
 from pathlib import Path
 from datetime import datetime
 
@@ -292,6 +297,283 @@ def build_payment_rows(fields):
     return rows
 
 
+def safe_filename_part(value, fallback="file"):
+    """Make user/template text safe to use in a Windows/macOS/Linux filename."""
+    value = str(value or "").strip()
+    value = re.sub(r'[<>:"/\\|?*]+', "_", value)
+    value = re.sub(r"\s+", "_", value).strip(" ._")
+    return value or fallback
+
+
+def find_libreoffice_executable():
+    """
+    Find LibreOffice/soffice without hard-coding one operating system.
+
+    You can also explicitly set:
+        LIBREOFFICE_PATH=C:\\Program Files\\LibreOffice\\program\\soffice.exe
+    """
+    configured = os.environ.get("LIBREOFFICE_PATH", "").strip()
+    candidates = []
+
+    if configured:
+        candidates.append(configured)
+
+    # PATH-based installs (Linux/macOS/Windows).
+    for command in ("soffice", "libreoffice"):
+        found = shutil.which(command)
+        if found:
+            candidates.append(found)
+
+    # Common direct install locations.
+    candidates.extend([
+        r"C:\Program Files\LibreOffice\program\soffice.exe",
+        r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+        "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+        "/usr/bin/libreoffice",
+        "/usr/bin/soffice",
+        "/usr/local/bin/libreoffice",
+        "/usr/local/bin/soffice",
+    ])
+
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return str(Path(candidate))
+
+    return None
+
+
+def _remove_tree_with_retries(path, attempts=8, delay=0.25):
+    """Best-effort Windows-friendly cleanup for temporary conversion folders."""
+    path = Path(path)
+    for _ in range(attempts):
+        if not path.exists():
+            return True
+        try:
+            shutil.rmtree(path)
+            return True
+        except (PermissionError, OSError):
+            time.sleep(delay)
+    return not path.exists()
+
+
+def _cleanup_later(path, delay=2.0):
+    """Retry cleanup in a daemon thread so a transient Word lock never breaks a download."""
+    path = Path(path)
+
+    def worker():
+        time.sleep(delay)
+        _remove_tree_with_retries(path, attempts=20, delay=0.5)
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+
+
+def convert_docx_to_pdf_with_word_windows(docx_path, pdf_path):
+    """
+    Convert DOCX -> PDF using an installed copy of Microsoft Word.
+
+    Word sometimes keeps a file handle alive for a moment after COM says the
+    document has closed. To keep that Windows lock away from the package's
+    real DOCX file, Word opens a disposable scratch copy instead.
+    """
+    if os.name != "nt":
+        raise RuntimeError("Microsoft Word COM conversion is only available on Windows.")
+
+    powershell = (
+        shutil.which("powershell.exe")
+        or shutil.which("powershell")
+        or shutil.which("pwsh.exe")
+        or shutil.which("pwsh")
+    )
+    if not powershell:
+        raise RuntimeError("PowerShell was not found on this Windows machine.")
+
+    source_docx = Path(docx_path).resolve()
+    pdf_path = Path(pdf_path).resolve()
+
+    # IMPORTANT: Word opens a copy, not the DOCX that is going into the ZIP.
+    # If WINWORD.exe hangs onto the file briefly, only this disposable scratch
+    # copy is locked, so ZIP creation and cleanup of the real package can finish.
+    scratch_dir = Path(tempfile.mkdtemp(prefix="zapdocs_word_"))
+    scratch_docx = scratch_dir / source_docx.name
+    shutil.copy2(source_docx, scratch_docx)
+
+    env = os.environ.copy()
+    env["ZAPDOCS_DOCX_PATH"] = str(scratch_docx)
+    env["ZAPDOCS_PDF_PATH"] = str(pdf_path)
+
+    script = """
+$ErrorActionPreference = "Stop"
+$word = $null
+$doc = $null
+try {
+    $docxPath = $env:ZAPDOCS_DOCX_PATH
+    $pdfPath = $env:ZAPDOCS_PDF_PATH
+
+    $word = New-Object -ComObject Word.Application
+    $word.Visible = $false
+    $word.DisplayAlerts = 0
+
+    # Open the disposable scratch copy read-only.
+    $doc = $word.Documents.Open($docxPath, $false, $true)
+    $doc.ExportAsFixedFormat($pdfPath, 17)
+}
+finally {
+    if ($doc -ne $null) {
+        try { $doc.Close([ref]0) } catch {}
+        try { [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($doc) | Out-Null } catch {}
+        $doc = $null
+    }
+    if ($word -ne $null) {
+        try { $word.Quit() } catch {}
+        try { [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($word) | Out-Null } catch {}
+        $word = $null
+    }
+    [GC]::Collect()
+    [GC]::WaitForPendingFinalizers()
+    [GC]::Collect()
+    [GC]::WaitForPendingFinalizers()
+}
+"""
+
+    try:
+        result = subprocess.run(
+            [powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+            env=env,
+        )
+
+        if result.returncode != 0:
+            message = result.stderr.strip() or result.stdout.strip()
+            raise RuntimeError(message or f"Microsoft Word returned exit code {result.returncode}.")
+
+        if not pdf_path.exists():
+            raise RuntimeError("Microsoft Word finished without creating the PDF.")
+
+        return pdf_path
+    finally:
+        # A transient WINWORD file lock should never turn a successful package
+        # generation into a 500 error. Try now, then retry in the background.
+        if not _remove_tree_with_retries(scratch_dir):
+            _cleanup_later(scratch_dir)
+
+
+def convert_docx_to_pdf(docx_path, output_dir):
+    """
+    Convert the rendered DOCX to PDF while preserving the Word layout.
+
+    Converter order:
+      1. LibreOffice headless -- best for Linux/hosted servers.
+      2. Microsoft Word through PowerShell/COM -- easiest for local Windows.
+      3. docx2pdf -- optional final fallback when installed.
+
+    A real document renderer is required. docxtpl/python-docx can create DOCX
+    files, but they do not contain a PDF rendering engine.
+    """
+    docx_path = Path(docx_path)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    expected_pdf = output_dir / f"{docx_path.stem}.pdf"
+
+    errors = []
+
+    libreoffice = find_libreoffice_executable()
+
+    if libreoffice:
+        profile_dir = output_dir / f".lo_profile_{uuid.uuid4().hex}"
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        profile_uri = profile_dir.resolve().as_uri()
+
+        command = [
+            libreoffice,
+            "--headless",
+            "--nologo",
+            "--nodefault",
+            "--nofirststartwizard",
+            "--nolockcheck",
+            f"-env:UserInstallation={profile_uri}",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            str(output_dir),
+            str(docx_path),
+        ]
+
+        try:
+            if expected_pdf.exists():
+                expected_pdf.unlink()
+
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+
+            if result.returncode == 0 and expected_pdf.exists():
+                return expected_pdf
+
+            errors.append(
+                "LibreOffice: "
+                + (
+                    result.stderr.strip()
+                    or result.stdout.strip()
+                    or f"exited with code {result.returncode}."
+                )
+            )
+        except Exception as exc:
+            errors.append(f"LibreOffice: {exc}")
+        finally:
+            shutil.rmtree(profile_dir, ignore_errors=True)
+    else:
+        errors.append("LibreOffice: not installed/found.")
+
+    if os.name == "nt":
+        try:
+            if expected_pdf.exists():
+                expected_pdf.unlink()
+
+            pdf = convert_docx_to_pdf_with_word_windows(docx_path, expected_pdf)
+            if pdf.exists():
+                return pdf
+        except Exception as exc:
+            errors.append(f"Microsoft Word: {exc}")
+    else:
+        errors.append("Microsoft Word: Windows COM conversion is unavailable on this OS.")
+
+    try:
+        from docx2pdf import convert as word_convert
+    except ImportError:
+        word_convert = None
+
+    if word_convert is not None:
+        try:
+            if expected_pdf.exists():
+                expected_pdf.unlink()
+
+            word_convert(str(docx_path), str(expected_pdf))
+            if expected_pdf.exists():
+                return expected_pdf
+
+            errors.append("docx2pdf: finished without creating the PDF.")
+        except Exception as exc:
+            errors.append(f"docx2pdf: {exc}")
+    else:
+        errors.append("docx2pdf: Python package is not installed.")
+
+    raise RuntimeError(
+        "No DOCX-to-PDF renderer is available. "
+        "If this backend is running on your Windows PC, install Microsoft Word "
+        "and this code will use it directly. If this backend is hosted on Linux, "
+        "install LibreOffice on the server/container. Details: "
+        + " | ".join(errors)
+    )
+
+
 def build_context(fields):
     context = {}
 
@@ -471,30 +753,78 @@ def generate(loan_id):
         state = "FL"
 
     templates_to_render = TEMPLATES_BY_STATE[state]
+    safe_loan_number = safe_filename_part(loan_number, "loan")
 
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for doc_label, template_file in templates_to_render.items():
-            doc = DocxTemplate(str(BASE_DIR / template_file))
-            doc.render(context)
+    # PDFs need real files on disk for LibreOffice/Word conversion. Do not use
+    # TemporaryDirectory here: on Windows, Word can keep a file handle alive for
+    # a fraction of a second and TemporaryDirectory treats that cleanup delay as
+    # a fatal exception. We clean up ourselves and never fail a completed ZIP
+    # merely because Windows is late releasing a temporary file.
+    temp_dir = Path(tempfile.mkdtemp(prefix="zapdocs_"))
+    try:
+        zip_buffer = io.BytesIO()
 
-            doc_buffer = io.BytesIO()
-            doc.save(doc_buffer)
-            doc_buffer.seek(0)
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for doc_label, template_file in templates_to_render.items():
+                template_path = BASE_DIR / template_file
+                if not template_path.exists():
+                    return jsonify({
+                        "error": f"Template file not found: {template_file}"
+                    }), 500
 
-            safe_label = doc_label.replace(" ", "_")
-            filename = f"{safe_label}_Loan_{loan_number}.docx"
-            zf.writestr(filename, doc_buffer.read())
+                doc = DocxTemplate(str(template_path))
+                doc.render(context)
 
-    zip_buffer.seek(0)
-    zip_name = f"Loan_{loan_number}_Documents.zip"
+                safe_label = safe_filename_part(doc_label, "Document")
+                base_name = f"{safe_label}_Loan_{safe_loan_number}"
+                docx_filename = f"{base_name}.docx"
+                pdf_filename = f"{base_name}.pdf"
 
-    return send_file(
-        zip_buffer,
-        as_attachment=True,
-        download_name=zip_name,
-        mimetype="application/zip",
-    )
+                # 1) Save the rendered Word document to the package temp folder.
+                docx_path = temp_dir / docx_filename
+                doc.save(str(docx_path))
+
+                # 2) Put the Word document into the ZIP.
+                zf.write(docx_path, arcname=docx_filename)
+
+                # 3) Convert a rendered Word document to PDF. On Windows the
+                #    converter itself gives Word a scratch copy, preventing Word
+                #    from locking this package's real DOCX file.
+                pdf_path = convert_docx_to_pdf(docx_path, temp_dir)
+
+                # 4) Put the matching PDF into the same ZIP.
+                zf.write(pdf_path, arcname=pdf_filename)
+
+        zip_buffer.seek(0)
+        zip_name = f"Loan_{safe_loan_number}_Documents.zip"
+
+        response = send_file(
+            zip_buffer,
+            as_attachment=True,
+            download_name=zip_name,
+            mimetype="application/zip",
+        )
+        return response
+
+    except RuntimeError as exc:
+        # Give the frontend a useful error instead of silently returning a ZIP
+        # that contains only Word documents.
+        return jsonify({
+            "error": "The Word documents were rendered, but PDF conversion failed.",
+            "details": str(exc),
+        }), 500
+    except Exception as exc:
+        app.logger.exception("Document package generation failed")
+        return jsonify({
+            "error": "Could not generate the document package.",
+            "details": str(exc),
+        }), 500
+    finally:
+        # Cleanup is deliberately best-effort. The ZIP lives in memory, so all
+        # package files may be removed now. If Windows/Word still holds a handle,
+        # retry asynchronously instead of turning a successful download into 500.
+        if not _remove_tree_with_retries(temp_dir):
+            _cleanup_later(temp_dir)
 
 
 # =====================
