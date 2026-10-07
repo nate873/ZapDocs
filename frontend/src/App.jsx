@@ -606,19 +606,31 @@ function LoanWorkspace() {
                 <fieldset key={group.name}>
                   <legend>{group.name}</legend>
                   <div className="row-list">
-                    {group.fields.map(([name, label]) => (
-                      <div key={name} className="row">
-                        <label htmlFor={name}>{label}</label>
-                        <input
-                          type="text"
-                          id={name}
-                          name={name}
-                          autoComplete="off"
-                          value={fields[name]}
-                          onChange={(e) => handleChange(name, e.target.value)}
-                        />
-                      </div>
-                    ))}
+                    {group.fields
+                      .filter(([name]) => {
+                        // Only show the second signer fields after a second borrower
+                        // has actually been entered.
+                        if (
+                          name === "SIGNATURE_FOOTER_2" ||
+                          name === "SIGNATURE_TITLE_2"
+                        ) {
+                          return Boolean((fields.BORROWER_2 || "").trim());
+                        }
+                        return true;
+                      })
+                      .map(([name, label]) => (
+                        <div key={name} className="row">
+                          <label htmlFor={name}>{label}</label>
+                          <input
+                            type="text"
+                            id={name}
+                            name={name}
+                            autoComplete="off"
+                            value={fields[name]}
+                            onChange={(e) => handleChange(name, e.target.value)}
+                          />
+                        </div>
+                      ))}
                   </div>
                 </fieldset>
               ))}
