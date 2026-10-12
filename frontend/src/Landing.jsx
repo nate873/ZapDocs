@@ -1,6 +1,46 @@
 import { useState, useEffect, useCallback } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+const configuredUrl = (import.meta.env.VITE_SUPABASE_URL || "").trim();
+const configuredKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "").trim();
+let supabase = null;
+let supabaseSetupError = "";
+try {
+  const url = new URL(configuredUrl);
+  if (!["https:", "http:"].includes(url.protocol)) {
+    throw new Error("Supabase URL must begin with https:// or http://.");
+  }
+  if (!configuredKey) throw new Error("Missing VITE_SUPABASE_PUBLISHABLE_KEY.");
+  supabase = createClient(url.origin, configuredKey);
+} catch (error) {
+  supabaseSetupError = `Supabase configuration problem: ${error.message}. Check webapp/frontend/.env and restart Vite.`;
+}
+
+async function authFetch(path, options = {}) {
+  if (!supabase) throw new Error(supabaseSetupError);
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error || !session?.access_token) throw new Error("Please sign in to ZapDocs again.");
+  return fetch(path, {
+    ...options,
+    headers: {
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...options.headers,
+      Authorization: `Bearer ${session.access_token}`,
+    },
+  });
+}
+
+async function apiJson(path, options = {}) {
+  const response = await authFetch(path, options);
+  const data = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(data?.error || data?.details || `Request failed (${response.status})`);
+  return data;
+}
+
+
 import teamPhoto from "./assets/happy-busy-executive-people-working-260nw-2510293371.webp";
 import loanScreen from "./assets/loanscreen.png";
+import notePreview from "./assets/3333.png";
 
 const FIELD_GROUPS = [
   {
@@ -125,22 +165,26 @@ function LoanWorkspace() {
   const [lenderInstErrorMsg, setLenderInstErrorMsg] = useState("");
   const [disclosureErrorMsg, setDisclosureErrorMsg] = useState("");
   const [loadingList, setLoadingList] = useState(true);
+  const [workspaceError, setWorkspaceError] = useState("");
 
   const paymentRows = fields.PAYMENT_ROWS || [];
 
   const refreshList = useCallback(async () => {
-    const res = await fetch("/api/loans");
-    const data = await res.json();
+    const data = await apiJson("/api/loans");
+    if (!Array.isArray(data)) throw new Error("The server did not return a loan list. Check your Vite API proxy.");
     setLoans(data);
     return data;
   }, []);
 
   useEffect(() => {
     (async () => {
-      const data = await refreshList();
-      setLoadingList(false);
-      if (data.length > 0) {
-        openLoan(data[0].id);
+      try {
+        const data = await refreshList();
+        if (data.length > 0) await openLoan(data[0].id);
+      } catch (err) {
+        setWorkspaceError(err.message || "Unable to load loans.");
+      } finally {
+        setLoadingList(false);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -148,9 +192,14 @@ function LoanWorkspace() {
 
   async function openLoan(id) {
     setActiveId(id);
-    const res = await fetch(`/api/loans/${id}`);
-    if (!res.ok) return;
-    const data = await res.json();
+    let data;
+    try {
+      data = await apiJson(`/api/loans/${id}`);
+      setWorkspaceError("");
+    } catch (err) {
+      setWorkspaceError(err.message || "Unable to open loan.");
+      return;
+    }
     const incoming = { ...emptyFields(), ...data.fields };
     // A loan saved before the payments table existed comes back with an empty
     // list — show one blank row so there's something to type into.
@@ -163,28 +212,37 @@ function LoanWorkspace() {
   }
 
   async function handleAddLoan() {
-    const res = await fetch("/api/loans", { method: "POST" });
-    const data = await res.json();
-    await refreshList();
-    setActiveId(data.id);
-    setFields(emptyFields());
-    setLabelInput(data.label || "New Loan");
-    setSaveStatus("idle");
+    try {
+      const data = await apiJson("/api/loans", { method: "POST" });
+      await refreshList();
+      setActiveId(data.id);
+      setFields(emptyFields());
+      setLabelInput(data.label || "New Loan");
+      setSaveStatus("idle");
+      setWorkspaceError("");
+    } catch (err) {
+      setWorkspaceError(err.message || "Unable to create loan.");
+    }
   }
 
   async function handleDeleteLoan(id, e) {
     e.stopPropagation();
     if (!window.confirm("Delete this loan? This can't be undone.")) return;
-    await fetch(`/api/loans/${id}`, { method: "DELETE" });
-    const data = await refreshList();
-    if (activeId === id) {
-      if (data.length > 0) {
-        openLoan(data[0].id);
-      } else {
-        setActiveId(null);
-        setFields(emptyFields());
-        setLabelInput("");
+    try {
+      await apiJson(`/api/loans/${id}`, { method: "DELETE" });
+      const data = await refreshList();
+      if (activeId === id) {
+        if (data.length > 0) {
+          await openLoan(data[0].id);
+        } else {
+          setActiveId(null);
+          setFields(emptyFields());
+          setLabelInput("");
+        }
       }
+      setWorkspaceError("");
+    } catch (err) {
+      setWorkspaceError(err.message || "Unable to delete loan.");
     }
   }
 
@@ -232,28 +290,25 @@ function LoanWorkspace() {
     if (!activeId) return;
     setSaveStatus("saving");
     try {
-      const res = await fetch(`/api/loans/${activeId}`, {
+      const data = await apiJson(`/api/loans/${activeId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fields, label: labelInput }),
       });
-      if (!res.ok) throw new Error("Save failed");
-      const data = await res.json();
       setLabelInput(data.label);
       await refreshList();
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 1500);
     } catch (err) {
       setSaveStatus("error");
+      setWorkspaceError(err.message || "Save failed.");
     }
   }
 
   async function saveActiveLoan() {
     // Shared helper: persist current fields before either generate action,
     // so the downloaded doc(s) always match what's on screen.
-    await fetch(`/api/loans/${activeId}`, {
+    await apiJson(`/api/loans/${activeId}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fields, label: labelInput }),
     });
     await refreshList();
@@ -266,7 +321,7 @@ function LoanWorkspace() {
     try {
       await saveActiveLoan();
 
-      const res = await fetch(`/api/loans/${activeId}/generate`, {
+      const res = await authFetch(`/api/loans/${activeId}/generate`, {
         method: "POST",
       });
       if (!res.ok) {
@@ -299,7 +354,7 @@ function LoanWorkspace() {
     try {
       await saveActiveLoan();
 
-      const res = await fetch(
+      const res = await authFetch(
         `/api/loans/${activeId}/generate-lender-instructions`,
         { method: "POST" }
       );
@@ -342,7 +397,7 @@ function LoanWorkspace() {
     try {
       await saveActiveLoan();
 
-      const res = await fetch(
+      const res = await authFetch(
         `/api/loans/${activeId}/generate-disclosure`,
         { method: "POST" }
       );
@@ -538,6 +593,7 @@ function LoanWorkspace() {
       </aside>
 
       <main className="main-panel">
+        {workspaceError && <p className="error-msg" role="alert" style={{ padding: "16px 24px" }}>{workspaceError}</p>}
         {!activeId && !loadingList && (
           <div className="empty-state">
             <p>Select a loan on the left, or add a new one to get started.</p>
@@ -606,19 +662,31 @@ function LoanWorkspace() {
                 <fieldset key={group.name}>
                   <legend>{group.name}</legend>
                   <div className="row-list">
-                    {group.fields.map(([name, label]) => (
-                      <div key={name} className="row">
-                        <label htmlFor={name}>{label}</label>
-                        <input
-                          type="text"
-                          id={name}
-                          name={name}
-                          autoComplete="off"
-                          value={fields[name]}
-                          onChange={(e) => handleChange(name, e.target.value)}
-                        />
-                      </div>
-                    ))}
+                    {group.fields
+                      .filter(([name]) => {
+                        // Only show the second signer fields after a second borrower
+                        // has actually been entered.
+                        if (
+                          name === "SIGNATURE_FOOTER_2" ||
+                          name === "SIGNATURE_TITLE_2"
+                        ) {
+                          return Boolean((fields.BORROWER_2 || "").trim());
+                        }
+                        return true;
+                      })
+                      .map(([name, label]) => (
+                        <div key={name} className="row">
+                          <label htmlFor={name}>{label}</label>
+                          <input
+                            type="text"
+                            id={name}
+                            name={name}
+                            autoComplete="off"
+                            value={fields[name]}
+                            onChange={(e) => handleChange(name, e.target.value)}
+                          />
+                        </div>
+                      ))}
                   </div>
                 </fieldset>
               ))}
@@ -1531,26 +1599,18 @@ function ZapDocsLanding({ onLaunch }) {
           place-items: center;
         }
 
-        .zap-doc {
-          position: absolute;
-          width: min(350px, 78%);
-          aspect-ratio: 8.5 / 11;
-          background: #fff;
+        .zap-note-preview {
+          position: relative;
+          z-index: 2;
+          display: block;
+          width: min(390px, 88%);
+          height: auto;
           border: 1px solid #d9e0e4;
-          border-radius: 14px;
-          box-shadow: 0 24px 55px rgba(26,48,63,.12);
-          padding: 27px;
+          border-radius: 6px;
+          background: #fff;
+          box-shadow: 0 24px 55px rgba(26,48,63,.18);
+          transform: rotate(-2deg);
         }
-        .zap-doc:nth-child(1) { transform: rotate(-8deg) translate(-48px, 18px); opacity: .58; }
-        .zap-doc:nth-child(2) { transform: rotate(6deg) translate(50px, 8px); opacity: .72; }
-        .zap-doc:nth-child(3) { z-index: 2; }
-
-        .zap-doc-brand { font-weight: 850; font-size: 12px; color: var(--zap-blue); }
-        .zap-doc-title { margin-top: 30px; font-size: 22px; font-weight: 850; letter-spacing: -.03em; }
-        .zap-doc-line { height: 7px; border-radius: 999px; background: #e6ebee; margin-top: 13px; }
-        .zap-doc-line.short { width: 63%; }
-        .zap-doc-line.mid { width: 81%; }
-        .zap-doc-sign { margin-top: 48px; border-top: 1px solid #bac6cd; width: 52%; padding-top: 6px; font-size: 8px; color: #768691; }
 
         .zap-dark-grid {
           display: grid;
@@ -1914,10 +1974,13 @@ function ZapDocsLanding({ onLaunch }) {
             </div>
           </div>
 
-          <div className="zap-doc-stack" aria-hidden="true">
-            <div className="zap-doc"><div className="zap-doc-brand">ZAPDOCS</div><div className="zap-doc-title">Lender Disclosure</div><div className="zap-doc-line"/><div className="zap-doc-line mid"/><div className="zap-doc-line"/><div className="zap-doc-line short"/></div>
-            <div className="zap-doc"><div className="zap-doc-brand">ZAPDOCS</div><div className="zap-doc-title">Promissory Note</div><div className="zap-doc-line"/><div className="zap-doc-line"/><div className="zap-doc-line mid"/><div className="zap-doc-line short"/></div>
-            <div className="zap-doc"><div className="zap-doc-brand">ZAPDOCS</div><div className="zap-doc-title">Deed of Trust</div><div className="zap-doc-line"/><div className="zap-doc-line mid"/><div className="zap-doc-line"/><div className="zap-doc-line"/><div className="zap-doc-line short"/><div className="zap-doc-sign">Borrower signature</div></div>
+          <div className="zap-doc-stack">
+            <img
+              className="zap-note-preview"
+              src={notePreview}
+              alt="Sample loan promissory note generated by ZapDocs"
+              loading="lazy"
+            />
           </div>
         </div>
       </section>
@@ -1969,52 +2032,127 @@ function ZapDocsLanding({ onLaunch }) {
   );
 }
 
-export default function App() {
-  const getInitialScreen = () => (window.location.hash === "#app" ? "app" : "landing");
+function ZapDocsAuth() {
+  const [mode, setMode] = useState("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  async function submit(event) {
+    event.preventDefault();
+    setPending(true);
+    setMessage("");
+    setErrorMessage("");
+    try {
+      if (!supabase) throw new Error("Supabase is not configured.");
+      if (mode === "reset") {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin + "/app",
+        });
+        if (error) throw error;
+        setMessage("If this email has an account, a password-reset link has been sent.");
+      } else if (mode === "signup") {
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        if (!data.session) setMessage("Check your email for the confirmation link, then sign in.");
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      }
+    } catch (err) {
+      setErrorMessage(err.message || "Authentication failed.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#f6f8fc", padding: 24, fontFamily: "Inter, system-ui, sans-serif" }}>
+      <form onSubmit={submit} style={{ width: "100%", maxWidth: 410, background: "white", borderRadius: 18, padding: 32, boxShadow: "0 20px 65px rgba(8,13,54,.10)" }}>
+        <h1 style={{ color: "#080d36", margin: "0 0 8px", fontSize: 30 }}>ZapDocs</h1>
+        <p style={{ color: "#59627a", margin: "0 0 28px" }}>{mode === "signup" ? "Create your account" : mode === "reset" ? "Reset your password" : "Sign in to your private loan workspace"}</p>
+        <label htmlFor="zd-email" style={{ display: "block", marginBottom: 7 }}>Email</label>
+        <input id="zd-email" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} style={{ width: "100%", padding: 12, boxSizing: "border-box", marginBottom: 17, border: "1px solid #cdd4e1", borderRadius: 9 }} />
+        {mode !== "reset" && <>
+          <label htmlFor="zd-password" style={{ display: "block", marginBottom: 7 }}>Password</label>
+          <input id="zd-password" type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} minLength={6} required value={password} onChange={e => setPassword(e.target.value)} style={{ width: "100%", padding: 12, boxSizing: "border-box", marginBottom: 17, border: "1px solid #cdd4e1", borderRadius: 9 }} />
+        </>}
+        {errorMessage && <p role="alert" style={{ color: "#b42318" }}>{errorMessage}</p>}
+        {message && <p role="status" style={{ color: "#176b50" }}>{message}</p>}
+        <button type="submit" disabled={pending} style={{ width: "100%", padding: 14, background: "#43e19a", border: 0, borderRadius: 9, color: "#080d36", fontWeight: 800, cursor: "pointer" }}>{pending ? "Please wait…" : mode === "signup" ? "Create account" : mode === "reset" ? "Send reset link" : "Sign in"}</button>
+        <div style={{ display: "flex", gap: 14, marginTop: 20, flexWrap: "wrap" }}>
+          <button type="button" onClick={() => { setMode(mode === "signup" ? "login" : "signup"); setErrorMessage(""); setMessage(""); }} style={{ border: 0, background: "none", color: "#2455e8", cursor: "pointer" }}>{mode === "signup" ? "Already have an account? Sign in" : "Create an account"}</button>
+          {mode !== "login" ? <button type="button" onClick={() => {setMode("login"); setMessage(""); setErrorMessage("");}} style={{ border: 0, background: "none", color: "#2455e8", cursor: "pointer" }}>Back to sign in</button> : <button type="button" onClick={() => {setMode("reset"); setMessage(""); setErrorMessage("");}} style={{ border: 0, background: "none", color: "#2455e8", cursor: "pointer" }}>Forgot password?</button>}
+        </div>
+      </form>
+    </div>
+  );
+}
+
+export default function Landing() {
+  const getInitialScreen = () =>
+    window.location.pathname.startsWith("/app") || window.location.hash === "#app"
+      ? "app" : "landing";
   const [screen, setScreen] = useState(getInitialScreen);
+  const [session, setSession] = useState(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [setupError, setSetupError] = useState("");
 
   useEffect(() => {
-    const syncFromHash = () => setScreen(window.location.hash === "#app" ? "app" : "landing");
-    window.addEventListener("hashchange", syncFromHash);
-    return () => window.removeEventListener("hashchange", syncFromHash);
+    if (!supabase) {
+      setSetupError(supabaseSetupError);
+      setCheckingAuth(false);
+      return;
+    }
+    let mounted = true;
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted) return;
+      if (error) setSetupError(error.message);
+      setSession(data?.session ?? null);
+      setCheckingAuth(false);
+    }).catch(err => {
+      if (mounted) { setSetupError(err.message); setCheckingAuth(false); }
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+    });
+    return () => { mounted = false; subscription.unsubscribe(); };
+  }, []);
+
+  useEffect(() => {
+    const syncLocation = () => setScreen(getInitialScreen());
+    window.addEventListener("hashchange", syncLocation);
+    window.addEventListener("popstate", syncLocation);
+    return () => {
+      window.removeEventListener("hashchange", syncLocation);
+      window.removeEventListener("popstate", syncLocation);
+    };
   }, []);
 
   const openApp = () => {
-    window.location.hash = "app";
+    window.history.pushState({}, "", "/app");
     setScreen("app");
   };
+  const goHome = () => {
+    window.history.pushState({}, "", "/");
+    setScreen("landing");
+  };
 
-  if (screen === "app") {
-    return (
-      <div>
-        <button
-          type="button"
-          onClick={() => {
-            window.location.hash = "";
-            setScreen("landing");
-          }}
-          style={{
-            position: "fixed",
-            zIndex: 9999,
-            right: 18,
-            top: 14,
-            border: "1px solid #d6dbe4",
-            borderRadius: 999,
-            padding: "8px 13px",
-            background: "#fff",
-            color: "#334155",
-            fontWeight: 700,
-            cursor: "pointer",
-            boxShadow: "0 8px 24px rgba(15,23,42,.08)",
-          }}
-        >
-          ← ZapDocs home
-        </button>
-        <LoanWorkspace />
+  if (screen !== "app") return <ZapDocsLanding onLaunch={openApp} />;
+
+  if (setupError) return <div role="alert" style={{ padding: 32, fontFamily: "system-ui", color: "#b42318" }}><h2>ZapDocs configuration error</h2><p>{setupError}</p><button onClick={goHome}>Back home</button></div>;
+  if (checkingAuth) return <p style={{ padding: 32, fontFamily: "system-ui" }}>Checking your ZapDocs session…</p>;
+  if (!session) return <ZapDocsAuth />;
+
+  return (
+    <div>
+      <div style={{ position: "fixed", right: 18, top: 14, zIndex: 9999, display: "flex", gap: 10 }}>
+        <button type="button" onClick={goHome} style={{ border: "1px solid #d6dbe4", borderRadius: 999, padding: "8px 13px", background: "white", cursor: "pointer", fontWeight: 700 }}>← ZapDocs home</button>
+        <button type="button" onClick={async () => { await supabase.auth.signOut(); }} style={{ border: "1px solid #d6dbe4", borderRadius: 999, padding: "8px 13px", background: "white", cursor: "pointer", fontWeight: 700 }}>Sign out</button>
       </div>
-    );
-  }
-
-  return <ZapDocsLanding onLaunch={openApp} />;
+      <LoanWorkspace key={session.user.id} />
+    </div>
+  );
 }
-
