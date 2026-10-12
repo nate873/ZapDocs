@@ -44,13 +44,7 @@ async function authFetch(path, options = {}) {
 async function apiJson(path, options = {}) {
   const response = await authFetch(path, options);
   const data = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message = typeof data?.error === "string" ? data.error :
-      typeof data?.details === "string" ? data.details : `Request failed (${response.status})`;
-    throw new Error(response.status === 401
-      ? `Unauthorized (401) at ${path}: ${message}. Check your Supabase session and backend authentication configuration.`
-      : `${message} [${path}]`);
-  }
+  if (!response.ok) throw new Error(data?.error || data?.details || `Request failed (${response.status})`);
   return data;
 }
 
@@ -183,13 +177,11 @@ function LoanWorkspace() {
   const [loadingList, setLoadingList] = useState(true);
   const [workspaceError, setWorkspaceError] = useState("");
 
-  const paymentRows = Array.isArray(fields.PAYMENT_ROWS) ? fields.PAYMENT_ROWS : [];
+  const paymentRows = fields.PAYMENT_ROWS || [];
 
   const refreshList = useCallback(async () => {
     const data = await apiJson("/api/loans");
-    if (!Array.isArray(data)) {
-      throw new Error("The /api/loans endpoint returned an unexpected response instead of a list. Check the API destination and server logs.");
-    }
+    if (!Array.isArray(data)) throw new Error("The server did not return a loan list. Check your Vite API proxy.");
     setLoans(data);
     return data;
   }, []);
@@ -218,11 +210,7 @@ function LoanWorkspace() {
       setWorkspaceError(err.message || "Unable to open loan.");
       return;
     }
-    if (!data || typeof data !== "object" || Array.isArray(data)) {
-      setWorkspaceError("The loan details endpoint returned invalid data.");
-      return;
-    }
-    const incoming = { ...emptyFields(), ...(data.fields && typeof data.fields === "object" && !Array.isArray(data.fields) ? data.fields : {}) };
+    const incoming = { ...emptyFields(), ...data.fields };
     // A loan saved before the payments table existed comes back with an empty
     // list — show one blank row so there's something to type into.
     if (!Array.isArray(incoming.PAYMENT_ROWS) || incoming.PAYMENT_ROWS.length === 0) {
@@ -276,7 +264,7 @@ function LoanWorkspace() {
 
   function handleRowChange(index, key, value) {
     setFields((prev) => {
-      const rows = [...(Array.isArray(prev.PAYMENT_ROWS) ? prev.PAYMENT_ROWS : [])];
+      const rows = [...(prev.PAYMENT_ROWS || [])];
       rows[index] = { ...rows[index], [key]: value };
       return { ...prev, PAYMENT_ROWS: rows };
     });
@@ -285,20 +273,20 @@ function LoanWorkspace() {
   function handleAddRow() {
     setFields((prev) => ({
       ...prev,
-      PAYMENT_ROWS: [...(Array.isArray(prev.PAYMENT_ROWS) ? prev.PAYMENT_ROWS : []), emptyPaymentRow()],
+      PAYMENT_ROWS: [...(prev.PAYMENT_ROWS || []), emptyPaymentRow()],
     }));
   }
 
   function handleRemoveRow(index) {
     setFields((prev) => {
-      const rows = (Array.isArray(prev.PAYMENT_ROWS) ? prev.PAYMENT_ROWS : []).filter((_, i) => i !== index);
+      const rows = (prev.PAYMENT_ROWS || []).filter((_, i) => i !== index);
       return { ...prev, PAYMENT_ROWS: rows.length ? rows : [emptyPaymentRow()] };
     });
   }
 
   function handleMoveRow(index, direction) {
     setFields((prev) => {
-      const rows = [...(Array.isArray(prev.PAYMENT_ROWS) ? prev.PAYMENT_ROWS : [])];
+      const rows = [...(prev.PAYMENT_ROWS || [])];
       const target = index + direction;
       if (target < 0 || target >= rows.length) return prev;
       [rows[index], rows[target]] = [rows[target], rows[index]];
@@ -639,7 +627,7 @@ function LoanWorkspace() {
                   // Reflect the typed name in the sidebar immediately, so it's
                   // obvious it's "taking" even before you hit Save.
                   setLoans((prev) =>
-                    (Array.isArray(prev) ? prev : []).map((loan) =>
+                    prev.map((loan) =>
                       loan.id === activeId
                         ? { ...loan, label: value || "New Loan" }
                         : loan
