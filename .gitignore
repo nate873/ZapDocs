@@ -1,0 +1,16 @@
+# Supabase credentials
+.env
+.env.*
+!.env.example
+
+# Frontend dependencies
+node_modules/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Private loan data
+loans_data.json
