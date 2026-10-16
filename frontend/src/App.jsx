@@ -163,7 +163,7 @@ function emptyFields() {
 }
 
 function LoanWorkspace() {
-  const [loans, setLoans] = useState([]); // [{id, label}]
+  const [loans, setLoans] = useState([]); // Always keep this as an array.
   const [activeId, setActiveId] = useState(null);
   const [fields, setFields] = useState(emptyFields());
   const [labelInput, setLabelInput] = useState("");
@@ -177,7 +177,7 @@ function LoanWorkspace() {
   const [loadingList, setLoadingList] = useState(true);
   const [workspaceError, setWorkspaceError] = useState("");
 
-  const paymentRows = fields.PAYMENT_ROWS || [];
+  const paymentRows = Array.isArray(fields.PAYMENT_ROWS) ? fields.PAYMENT_ROWS : [];
 
   const refreshList = useCallback(async () => {
     const data = await apiJson("/api/loans");
@@ -264,7 +264,7 @@ function LoanWorkspace() {
 
   function handleRowChange(index, key, value) {
     setFields((prev) => {
-      const rows = [...(prev.PAYMENT_ROWS || [])];
+      const rows = [...(Array.isArray(prev.PAYMENT_ROWS) ? prev.PAYMENT_ROWS : [])];
       rows[index] = { ...rows[index], [key]: value };
       return { ...prev, PAYMENT_ROWS: rows };
     });
@@ -273,20 +273,20 @@ function LoanWorkspace() {
   function handleAddRow() {
     setFields((prev) => ({
       ...prev,
-      PAYMENT_ROWS: [...(prev.PAYMENT_ROWS || []), emptyPaymentRow()],
+      PAYMENT_ROWS: [...(Array.isArray(prev.PAYMENT_ROWS) ? prev.PAYMENT_ROWS : []), emptyPaymentRow()],
     }));
   }
 
   function handleRemoveRow(index) {
     setFields((prev) => {
-      const rows = (prev.PAYMENT_ROWS || []).filter((_, i) => i !== index);
+      const rows = (Array.isArray(prev.PAYMENT_ROWS) ? prev.PAYMENT_ROWS : []).filter((_, i) => i !== index);
       return { ...prev, PAYMENT_ROWS: rows.length ? rows : [emptyPaymentRow()] };
     });
   }
 
   function handleMoveRow(index, direction) {
     setFields((prev) => {
-      const rows = [...(prev.PAYMENT_ROWS || [])];
+      const rows = [...(Array.isArray(prev.PAYMENT_ROWS) ? prev.PAYMENT_ROWS : [])];
       const target = index + direction;
       if (target < 0 || target >= rows.length) return prev;
       [rows[index], rows[target]] = [rows[target], rows[index]];
@@ -2639,10 +2639,8 @@ function ZapDocsAuth() {
 }
 
 export default function App() {
-  const getInitialScreen = () =>
-    window.location.pathname.startsWith("/app") || window.location.hash === "#app"
-      ? "app" : "landing";
-  const [screen, setScreen] = useState(getInitialScreen);
+  // Public landing page is always the first screen on a fresh visit.
+  const [screen, setScreen] = useState("landing");
   const [session, setSession] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [setupError, setSetupError] = useState("");
@@ -2669,7 +2667,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const syncLocation = () => setScreen(getInitialScreen());
+    const syncLocation = () => setScreen("landing");
     window.addEventListener("hashchange", syncLocation);
     window.addEventListener("popstate", syncLocation);
     return () => {
