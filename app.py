@@ -6,7 +6,23 @@ import re
 
 
 
+
+
+
+
+
+
+
+
 import io
+
+
+
+
+
+
+
+
 
 
 
@@ -22,7 +38,23 @@ import json
 
 
 
+
+
+
+
+
+
+
+
 import uuid
+
+
+
+
+
+
+
+
 
 
 
@@ -38,7 +70,23 @@ import zipfile
 
 
 
+
+
+
+
+
+
+
+
 import threading
+
+
+
+
+
+
+
+
 
 
 
@@ -54,7 +102,23 @@ import os
 
 
 
+
+
+
+
+
+
+
+
 import shutil
+
+
+
+
+
+
+
+
 
 
 
@@ -70,7 +134,23 @@ import subprocess
 
 
 
+
+
+
+
+
+
+
+
 import tempfile
+
+
+
+
+
+
+
+
 
 
 
@@ -86,7 +166,23 @@ import time
 
 
 
+
+
+
+
+
+
+
+
 from pathlib import Path
+
+
+
+
+
+
+
+
 
 
 
@@ -110,11 +206,33 @@ from datetime import datetime
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 from flask import Flask, request, send_file, send_from_directory, jsonify, g
+
+
 
 from functools import wraps
 
+
+
 from supabase import create_client
+
+
 
 from dotenv import load_dotenv
 
@@ -124,7 +242,23 @@ from dotenv import load_dotenv
 
 
 
+
+
+
+
+
+
+
+
 from docxtpl import DocxTemplate
+
+
+
+
+
+
+
+
 
 
 
@@ -148,7 +282,31 @@ from num2words import num2words
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # python-docx — used to build the Key Provisions Summary directly (no .docx
+
+
+
+
+
+
+
+
 
 
 
@@ -164,8 +322,25 @@ from num2words import num2words
 
 
 
+
+
+
+
+
+
+
+
 from docx import Document as PyDocxDocument
+
 from docxcompose.composer import Composer
+
+
+
+
+
+
+
+
 
 
 
@@ -181,7 +356,23 @@ from docx.shared import Inches, Pt
 
 
 
+
+
+
+
+
+
+
+
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+
+
+
+
+
+
+
 
 
 
@@ -197,7 +388,31 @@ from docx.oxml.ns import qn
 
 
 
+
+
+
+
+
+
+
+
 from docx.oxml import OxmlElement
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -229,11 +444,33 @@ app = Flask(__name__, static_folder="static", static_url_path="")
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 BASE_DIR = Path(__file__).parent
 
 
 
+
+
+
+
 # Load webapp/.env locally. Railway-provided variables take precedence.
+
+
 
 load_dotenv(dotenv_path=BASE_DIR / ".env", override=False)
 
@@ -243,17 +480,37 @@ load_dotenv(dotenv_path=BASE_DIR / ".env", override=False)
 
 
 
+
+
+
+
+
+
+
+
 # Supabase credentials must be set in Railway Variables, not committed in Git.
+
+
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 
+
+
 SUPABASE_PUBLISHABLE_KEY = os.environ["SUPABASE_PUBLISHABLE_KEY"]
+
+
 
 SUPABASE_SECRET_KEY = os.environ["SUPABASE_SECRET_KEY"]
 
 
 
+
+
+
+
 _auth_client = create_client(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
+
+
 
 _db = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
 
@@ -261,37 +518,75 @@ _db = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
 
 
 
+
+
+
+
+
+
 def require_auth(handler):
+
+
 
     """Validate an access token before any private loan operation."""
 
+
+
     @wraps(handler)
+
+
 
     def protected(*args, **kwargs):
 
+
+
         header = request.headers.get("Authorization", "")
+
+
 
         scheme, _, token = header.partition(" ")
 
+
+
         if scheme.lower() != "bearer" or not token.strip():
+
+
 
             return jsonify({"error": "Sign in required."}), 401
 
+
+
         try:
+
+
 
             response = _auth_client.auth.get_user(token.strip())
 
+
+
             if not response.user:
+
+
 
                 return jsonify({"error": "Invalid session."}), 401
 
+
+
             g.user_id = str(response.user.id)
+
+
 
         except Exception:
 
+
+
             return jsonify({"error": "Invalid or expired session."}), 401
 
+
+
         return handler(*args, **kwargs)
+
+
 
     return protected
 
@@ -299,29 +594,59 @@ def require_auth(handler):
 
 
 
+
+
+
+
+
+
 def user_loan(loan_id):
+
+
 
     """Always scope backend secret-key queries to authenticated ownership."""
 
+
+
     try:
+
+
 
         uuid.UUID(str(loan_id))
 
+
+
     except (ValueError, AttributeError, TypeError):
+
+
 
         return None
 
+
+
     result = (_db.table("loans")
+
+
 
               .select("id,label,fields")
 
+
+
               .eq("id", loan_id)
+
+
 
               .eq("user_id", g.user_id)
 
+
+
               .limit(1)
 
+
+
               .execute())
+
+
 
     return result.data[0] if result.data else None
 
@@ -341,7 +666,33 @@ def user_loan(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
 
 
 
@@ -357,7 +708,31 @@ def user_loan(loan_id):
 
 
 
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -381,7 +756,23 @@ TEMPLATES_BY_STATE = {
 
 
 
+
+
+
+
+
+
+
+
     "FL": {
+
+
+
+
+
+
+
+
 
 
 
@@ -397,7 +788,23 @@ TEMPLATES_BY_STATE = {
 
 
 
+
+
+
+
+
+
+
+
         "Agreement": "template_agreement.docx",
+
+
+
+
+
+
+
+
 
 
 
@@ -413,7 +820,23 @@ TEMPLATES_BY_STATE = {
 
 
 
+
+
+
+
+
+
+
+
         "Mortgage": "template_mortgage.docx",
+
+
+
+
+
+
+
+
 
 
 
@@ -429,6 +852,14 @@ TEMPLATES_BY_STATE = {
 
 
 
+
+
+
+
+
+
+
+
         "Guaranty": "guaranty_template.docx",
 
 
@@ -437,7 +868,23 @@ TEMPLATES_BY_STATE = {
 
 
 
+
+
+
+
+
+
+
+
     },
+
+
+
+
+
+
+
+
 
 
 
@@ -453,8 +900,25 @@ TEMPLATES_BY_STATE = {
 
 
 
+
+
+
+
+
+
+
+
         "Note": "ca_note_template.docx",
+
         "Agreement": "ca_agreement_template.docx",
+
+
+
+
+
+
+
+
 
 
 
@@ -470,7 +934,23 @@ TEMPLATES_BY_STATE = {
 
 
 
+
+
+
+
+
+
+
+
         "Servicing": "ca_servicing_template.docx",
+
+
+
+
+
+
+
+
 
 
 
@@ -486,7 +966,23 @@ TEMPLATES_BY_STATE = {
 
 
 
+
+
+
+
+
+
+
+
         "Oral Disclosure": "oral_disclosure_ca_template.docx",
+
+
+
+
+
+
+
+
 
 
 
@@ -502,7 +998,23 @@ TEMPLATES_BY_STATE = {
 
 
 
+
+
+
+
+
+
+
+
         "Lender Disclosure": "lender_disclosure_template.docx",
+
+
+
+
+
+
+
+
 
 
 
@@ -518,7 +1030,27 @@ TEMPLATES_BY_STATE = {
 
 
 
+
+
+
+
+
+
+
+
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -534,22 +1066,45 @@ TEMPLATES_BY_STATE = {
 
 
 
+
+
+
+
 # Keep full_set.docx in the same directory as the other Word templates.
 
 
 
+
+
+
+
 # Ordered sections for the combined California closing document.
+
 # "Agreement" corresponds to ca_agreement_template.docx (Security Agreement).
+
 CA_COMBINED_DOCUMENT_ORDER = (
+
     "Note",
+
     "Deed of Trust",
+
     "Agreement",
+
     "Boiler",
+
     "Oral Disclosure",
+
 )
 
 
+
+
+
 COMMON_TEMPLATES = {
+
+
+
+
 
 
 
@@ -557,7 +1112,27 @@ COMMON_TEMPLATES = {
 
 
 
+
+
+
+
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -581,7 +1156,23 @@ COMMON_TEMPLATES = {
 
 
 
+
+
+
+
+
+
+
+
 # servicing document — the one a lender needs on its own, separate from
+
+
+
+
+
+
+
+
 
 
 
@@ -597,7 +1188,23 @@ COMMON_TEMPLATES = {
 
 
 
+
+
+
+
+
+
+
+
 LENDER_INSTRUCTIONS_DOC_KEY = {
+
+
+
+
+
+
+
+
 
 
 
@@ -613,6 +1220,14 @@ LENDER_INSTRUCTIONS_DOC_KEY = {
 
 
 
+
+
+
+
+
+
+
+
     "CA": "Servicing",
 
 
@@ -621,7 +1236,31 @@ LENDER_INSTRUCTIONS_DOC_KEY = {
 
 
 
+
+
+
+
+
+
+
+
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -645,7 +1284,23 @@ LENDER_INSTRUCTIONS_DOC_KEY = {
 
 
 
+
+
+
+
+
+
+
+
 # document. CA only — states without an entry here will 400 if requested.
+
+
+
+
+
+
+
+
 
 
 
@@ -661,7 +1316,23 @@ LENDER_DISCLOSURE_DOC_KEY = {
 
 
 
+
+
+
+
+
+
+
+
     "CA": "Lender Disclosure",
+
+
+
+
+
+
+
+
 
 
 
@@ -685,7 +1356,31 @@ LENDER_DISCLOSURE_DOC_KEY = {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ALL_FIELDS = [
+
+
+
+
+
+
+
+
 
 
 
@@ -701,7 +1396,23 @@ ALL_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     "LOAN_NUMBER", "LOAN_AMOUNT", "INTEREST_RATE", "MONTHLY_PAYMENT",
+
+
+
+
+
+
+
+
 
 
 
@@ -717,7 +1428,23 @@ ALL_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     "BALLOON_PAYMENT", "COMMISSION", "DEFAULT_RATE",
+
+
+
+
+
+
+
+
 
 
 
@@ -733,7 +1460,23 @@ ALL_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     "SERVICING_DATE",
+
+
+
+
+
+
+
+
 
 
 
@@ -749,7 +1492,23 @@ ALL_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     "COUNTY", "APN", "TITLE_NUMBER", "TRUSTEE", "CITY", "INTEREST_COMMENCE",
+
+
+
+
+
+
+
+
 
 
 
@@ -765,7 +1524,23 @@ ALL_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     "VESTING", "MAILING_ADDRESS", "SIGNATURE_FOOTER", "SIGNATURE_TITLE",
+
+
+
+
+
+
+
+
 
 
 
@@ -781,7 +1556,24 @@ ALL_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     "LENDER", "LENDER_NAME", "LENDER_ADDRESS", "LENDER_OWNERSHIP",
+    "BROKERAGE_NAME", "BROKERAGE_ADDRESS", "BROKERAGE_CITYSTATEZIP", "TRUSTEE_ADDRESS",
+
+
+
+
+
+
+
+
 
 
 
@@ -797,7 +1589,23 @@ ALL_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     "LOAN_TERM", "LTV", "MARKET_VALUE", "CURRENT_ENCUMBRANCE",
+
+
+
+
+
+
+
+
 
 
 
@@ -813,7 +1621,23 @@ ALL_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     "MONTHLY_EXPENSES", "ESCROW_NAME", "ESCROW_ADDRESS",
+
+
+
+
+
+
+
+
 
 
 
@@ -829,6 +1653,14 @@ ALL_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     "PREPAID_PAYMENTS", "FIRST_PREPAID_MONTH", "LAST_PREPAID_MONTH",
 
 
@@ -837,7 +1669,26 @@ ALL_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     "FIRST_PAYMENT_DUE",
+    # California Note (October 30, 2026)
+    "PREPAYMENT_PENALTY", "PREPAID_NUMBER_MONTHS",
+    "FIRST_PREPAID", "LAST_PREPAID", "FIRST_PAYMENT_DATE",
+
+
+
+
+
+
+
+
 
 
 
@@ -853,7 +1704,23 @@ ALL_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     # elsewhere in the package but are needed for the one-page cover sheet.
+
+
+
+
+
+
+
+
 
 
 
@@ -869,7 +1736,31 @@ ALL_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
 ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -893,7 +1784,23 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     "LOAN_AMOUNT",
+
+
+
+
+
+
+
+
 
 
 
@@ -909,7 +1816,23 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     "BALLOON_PAYMENT",
+
+
+
+
+
+
+
+
 
 
 
@@ -925,7 +1848,23 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     "PREPAID_INTEREST",
+
+
+
+
+
+
+
+
 
 
 
@@ -941,7 +1880,23 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     "CURRENT_ENCUMBRANCE",
+
+
+
+
+
+
+
+
 
 
 
@@ -957,7 +1912,23 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     "FUTURE_EQUITY",
+
+
+
+
+
+
+
+
 
 
 
@@ -973,7 +1944,23 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     "GROSS_SALARY",
+
+
+
+
+
+
+
+
 
 
 
@@ -989,7 +1976,23 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
     "PREPAID_PAYMENTS",
+
+
+
+
+
+
+
+
 
 
 
@@ -1013,7 +2016,31 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
 
 
 
@@ -1029,7 +2056,23 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
 #
+
+
+
+
+
+
+
+
 
 
 
@@ -1045,7 +2088,23 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
 # the payments table, so a loan can have as many rate/payment tiers as it
+
+
+
+
+
+
+
+
 
 
 
@@ -1061,7 +2120,23 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
 #
+
+
+
+
+
+
+
+
 
 
 
@@ -1077,7 +2152,23 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
 #
+
+
+
+
+
+
+
+
 
 
 
@@ -1093,7 +2184,23 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
 #   row: {{ row.COUNT }} | {{ row.DESCRIPTION }} | {{ row.RATE }} | {{ row.AMOUNT }}
+
+
+
+
+
+
+
+
 
 
 
@@ -1109,7 +2216,23 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
 #
+
+
+
+
+
+
+
+
 
 
 
@@ -1125,7 +2248,23 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
 # if the template keeps "Monthly Beginning" as literal text in the cell.
+
+
+
+
+
+
+
+
 
 
 
@@ -1141,7 +2280,23 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
 # A template that still uses the older fixed two-row table works too — that
+
+
+
+
+
+
+
+
 
 
 
@@ -1157,6 +2312,14 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
 # fields instead, and simply ignores PAYMENT_ROWS.
 
 
@@ -1165,7 +2328,31 @@ CURRENCY_FIELDS = [
 
 
 
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1205,7 +2392,39 @@ PAYMENT_ROW_FIELDS = ["COUNT", "START", "DESCRIPTION", "RATE", "AMOUNT"]
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def empty_payment_row():
+
+
+
+
+
+
+
+
 
 
 
@@ -1237,7 +2456,39 @@ def empty_payment_row():
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def clean_payment_rows(raw):
+
+
+
+
+
+
+
+
 
 
 
@@ -1253,7 +2504,23 @@ def clean_payment_rows(raw):
 
 
 
+
+
+
+
+
+
+
+
     rows = []
+
+
+
+
+
+
+
+
 
 
 
@@ -1269,7 +2536,23 @@ def clean_payment_rows(raw):
 
 
 
+
+
+
+
+
+
+
+
         return rows
+
+
+
+
+
+
+
+
 
 
 
@@ -1285,7 +2568,23 @@ def clean_payment_rows(raw):
 
 
 
+
+
+
+
+
+
+
+
         if not isinstance(item, dict):
+
+
+
+
+
+
+
+
 
 
 
@@ -1301,7 +2600,23 @@ def clean_payment_rows(raw):
 
 
 
+
+
+
+
+
+
+
+
         rows.append({
+
+
+
+
+
+
+
+
 
 
 
@@ -1317,6 +2632,14 @@ def clean_payment_rows(raw):
 
 
 
+
+
+
+
+
+
+
+
             for name in PAYMENT_ROW_FIELDS
 
 
@@ -1325,7 +2648,23 @@ def clean_payment_rows(raw):
 
 
 
+
+
+
+
+
+
+
+
         })
+
+
+
+
+
+
+
+
 
 
 
@@ -1357,7 +2696,39 @@ def clean_payment_rows(raw):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
 
 
 
@@ -1373,7 +2744,23 @@ def clean_payment_rows(raw):
 
 
 
+
+
+
+
+
+
+
+
 # loans_data.json looks like:
+
+
+
+
+
+
+
+
 
 
 
@@ -1389,7 +2776,23 @@ def clean_payment_rows(raw):
 
 
 
+
+
+
+
+
+
+
+
 #   "<uuid>": {"label": "Ramirez / 92nd", "fields": {"LOAN_NUMBER": "...", ...}},
+
+
+
+
+
+
+
+
 
 
 
@@ -1405,6 +2808,14 @@ def clean_payment_rows(raw):
 
 
 
+
+
+
+
+
+
+
+
 # }
 
 
@@ -1413,7 +2824,31 @@ def clean_payment_rows(raw):
 
 
 
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1437,7 +2872,23 @@ def empty_fields():
 
 
 
+
+
+
+
+
+
+
+
     fields = {name: "" for name in ALL_FIELDS}
+
+
+
+
+
+
+
+
 
 
 
@@ -1453,7 +2904,23 @@ def empty_fields():
 
 
 
+
+
+
+
+
+
+
+
     fields["PAYMENT_ROWS"] = []
+
+
+
+
+
+
+
+
 
 
 
@@ -1485,7 +2952,39 @@ def empty_fields():
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def default_label(fields):
+
+
+
+
+
+
+
+
 
 
 
@@ -1501,7 +3000,23 @@ def default_label(fields):
 
 
 
+
+
+
+
+
+
+
+
     signer = (fields.get("SIGNATURE_FOOTER") or "").strip()
+
+
+
+
+
+
+
+
 
 
 
@@ -1525,7 +3040,31 @@ def default_label(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     # Last word of the signer's name (surname), skipping trailing punctuation
+
+
+
+
+
+
+
+
 
 
 
@@ -1549,7 +3088,31 @@ def default_label(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     street_part = ""
+
+
+
+
+
+
+
+
 
 
 
@@ -1565,7 +3128,23 @@ def default_label(fields):
 
 
 
+
+
+
+
+
+
+
+
         # crude: drop leading house number/unit tokens, take the next word or two
+
+
+
+
+
+
+
+
 
 
 
@@ -1581,7 +3160,23 @@ def default_label(fields):
 
 
 
+
+
+
+
+
+
+
+
         street_words = [p for p in parts if not any(ch.isdigit() for ch in p)]
+
+
+
+
+
+
+
+
 
 
 
@@ -1605,6 +3200,22 @@ def default_label(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     if name_part and street_part:
 
 
@@ -1613,7 +3224,23 @@ def default_label(fields):
 
 
 
+
+
+
+
+
+
+
+
         return f"{name_part} / {street_part}"
+
+
+
+
+
+
+
+
 
 
 
@@ -1645,7 +3272,39 @@ def default_label(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
 
 
 
@@ -1661,7 +3320,31 @@ def default_label(fields):
 
 
 
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1685,7 +3368,23 @@ def spell_dollars(amount):
 
 
 
+
+
+
+
+
+
+
+
     dollars = int(float(amount))
+
+
+
+
+
+
+
+
 
 
 
@@ -1701,7 +3400,23 @@ def spell_dollars(amount):
 
 
 
+
+
+
+
+
+
+
+
     words = num2words(dollars, to="cardinal")
+
+
+
+
+
+
+
+
 
 
 
@@ -1717,6 +3432,14 @@ def spell_dollars(amount):
 
 
 
+
+
+
+
+
+
+
+
     words = re.sub(r"\s+", " ", words).strip()
 
 
@@ -1725,7 +3448,23 @@ def spell_dollars(amount):
 
 
 
+
+
+
+
+
+
+
+
     words = words.title()
+
+
+
+
+
+
+
+
 
 
 
@@ -1757,7 +3496,39 @@ def spell_dollars(amount):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def ordinal(n):
+
+
+
+
+
+
+
+
 
 
 
@@ -1773,7 +3544,23 @@ def ordinal(n):
 
 
 
+
+
+
+
+
+
+
+
     if 11 <= (n % 100) <= 13:
+
+
+
+
+
+
+
+
 
 
 
@@ -1789,6 +3576,14 @@ def ordinal(n):
 
 
 
+
+
+
+
+
+
+
+
     else:
 
 
@@ -1797,7 +3592,23 @@ def ordinal(n):
 
 
 
+
+
+
+
+
+
+
+
         suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+
+
+
+
+
+
+
+
 
 
 
@@ -1829,7 +3640,39 @@ def ordinal(n):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Accepted ways a date might get typed into the form. The Deed of Trust
+
+
+
+
+
+
+
+
 
 
 
@@ -1845,7 +3688,23 @@ def ordinal(n):
 
 
 
+
+
+
+
+
+
+
+
 # a stray missing comma used to blank the whole "made this ___ day of ___".
+
+
+
+
+
+
+
+
 
 
 
@@ -1861,7 +3720,23 @@ DATE_FORMATS = [
 
 
 
+
+
+
+
+
+
+
+
     "%B %d, %Y",   # August 11, 2026
+
+
+
+
+
+
+
+
 
 
 
@@ -1877,7 +3752,23 @@ DATE_FORMATS = [
 
 
 
+
+
+
+
+
+
+
+
     "%b %d, %Y",   # Aug 11, 2026
+
+
+
+
+
+
+
+
 
 
 
@@ -1893,7 +3784,23 @@ DATE_FORMATS = [
 
 
 
+
+
+
+
+
+
+
+
     "%m/%d/%Y",    # 08/11/2026
+
+
+
+
+
+
+
+
 
 
 
@@ -1909,6 +3816,14 @@ DATE_FORMATS = [
 
 
 
+
+
+
+
+
+
+
+
     "%m-%d-%Y",    # 08-11-2026
 
 
@@ -1917,7 +3832,23 @@ DATE_FORMATS = [
 
 
 
+
+
+
+
+
+
+
+
     "%Y-%m-%d",    # 2026-08-11
+
+
+
+
+
+
+
+
 
 
 
@@ -1949,7 +3880,39 @@ DATE_FORMATS = [
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def parse_date(value):
+
+
+
+
+
+
+
+
 
 
 
@@ -1965,7 +3928,23 @@ def parse_date(value):
 
 
 
+
+
+
+
+
+
+
+
     raw = str(value or "").strip()
+
+
+
+
+
+
+
+
 
 
 
@@ -1981,7 +3960,23 @@ def parse_date(value):
 
 
 
+
+
+
+
+
+
+
+
         return None
+
+
+
+
+
+
+
+
 
 
 
@@ -1997,7 +3992,23 @@ def parse_date(value):
 
 
 
+
+
+
+
+
+
+
+
         try:
+
+
+
+
+
+
+
+
 
 
 
@@ -2013,6 +4024,14 @@ def parse_date(value):
 
 
 
+
+
+
+
+
+
+
+
         except ValueError:
 
 
@@ -2021,7 +4040,23 @@ def parse_date(value):
 
 
 
+
+
+
+
+
+
+
+
             continue
+
+
+
+
+
+
+
+
 
 
 
@@ -2053,6 +4088,30 @@ def parse_date(value):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def long_date(dt):
 
 
@@ -2061,7 +4120,23 @@ def long_date(dt):
 
 
 
+
+
+
+
+
+
+
+
     """Render a datetime as 'August 11, 2026' (no zero-padded day)."""
+
+
+
+
+
+
+
+
 
 
 
@@ -2093,7 +4168,39 @@ def long_date(dt):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def money(value):
+
+
+
+
+
+
+
+
 
 
 
@@ -2109,7 +4216,23 @@ def money(value):
 
 
 
+
+
+
+
+
+
+
+
     raw = str(value or "").strip().replace("$", "").replace(",", "")
+
+
+
+
+
+
+
+
 
 
 
@@ -2125,7 +4248,23 @@ def money(value):
 
 
 
+
+
+
+
+
+
+
+
         return ""
+
+
+
+
+
+
+
+
 
 
 
@@ -2141,6 +4280,14 @@ def money(value):
 
 
 
+
+
+
+
+
+
+
+
         return "${:,.2f}".format(float(raw))
 
 
@@ -2149,7 +4296,23 @@ def money(value):
 
 
 
+
+
+
+
+
+
+
+
     except ValueError:
+
+
+
+
+
+
+
+
 
 
 
@@ -2181,7 +4344,39 @@ def money(value):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def percent(value):
+
+
+
+
+
+
+
+
 
 
 
@@ -2197,7 +4392,23 @@ def percent(value):
 
 
 
+
+
+
+
+
+
+
+
     raw = str(value or "").strip()
+
+
+
+
+
+
+
+
 
 
 
@@ -2213,7 +4424,23 @@ def percent(value):
 
 
 
+
+
+
+
+
+
+
+
         return ""
+
+
+
+
+
+
+
+
 
 
 
@@ -2245,6 +4472,30 @@ def percent(value):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def build_payment_rows(fields):
 
 
@@ -2253,7 +4504,23 @@ def build_payment_rows(fields):
 
 
 
+
+
+
+
+
+
+
+
     """Turn the saved PAYMENT_ROWS into render-ready rows for the Note table."""
+
+
+
+
+
+
+
+
 
 
 
@@ -2277,6 +4544,22 @@ def build_payment_rows(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     for row in clean_payment_rows(fields.get("PAYMENT_ROWS")):
 
 
@@ -2285,7 +4568,23 @@ def build_payment_rows(fields):
 
 
 
+
+
+
+
+
+
+
+
         if not any(row.values()):
+
+
+
+
+
+
+
+
 
 
 
@@ -2309,7 +4608,31 @@ def build_payment_rows(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         start_dt = parse_date(row["START"])
+
+
+
+
+
+
+
+
 
 
 
@@ -2333,7 +4656,31 @@ def build_payment_rows(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         # Free-text Description wins; otherwise compose the usual phrasing.
+
+
+
+
+
+
+
+
 
 
 
@@ -2349,7 +4696,23 @@ def build_payment_rows(fields):
 
 
 
+
+
+
+
+
+
+
+
         if not description and start:
+
+
+
+
+
+
+
+
 
 
 
@@ -2373,7 +4736,31 @@ def build_payment_rows(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         rows.append({
+
+
+
+
+
+
+
+
 
 
 
@@ -2389,7 +4776,23 @@ def build_payment_rows(fields):
 
 
 
+
+
+
+
+
+
+
+
             "START": start,
+
+
+
+
+
+
+
+
 
 
 
@@ -2405,6 +4808,14 @@ def build_payment_rows(fields):
 
 
 
+
+
+
+
+
+
+
+
             "RATE": percent(row["RATE"]),
 
 
@@ -2413,7 +4824,23 @@ def build_payment_rows(fields):
 
 
 
+
+
+
+
+
+
+
+
             "AMOUNT": money(row["AMOUNT"]),
+
+
+
+
+
+
+
+
 
 
 
@@ -2437,7 +4864,31 @@ def build_payment_rows(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     # A loan saved before this feature existed has no rows at all. Emit one
+
+
+
+
+
+
+
+
 
 
 
@@ -2453,7 +4904,23 @@ def build_payment_rows(fields):
 
 
 
+
+
+
+
+
+
+
+
     # header with nothing under it.
+
+
+
+
+
+
+
+
 
 
 
@@ -2469,7 +4936,31 @@ def build_payment_rows(fields):
 
 
 
+
+
+
+
+
+
+
+
         rows.append(empty_payment_row())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2509,7 +5000,39 @@ def build_payment_rows(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def safe_filename_part(value, fallback="file"):
+
+
+
+
+
+
+
+
 
 
 
@@ -2525,6 +5048,14 @@ def safe_filename_part(value, fallback="file"):
 
 
 
+
+
+
+
+
+
+
+
     value = str(value or "").strip()
 
 
@@ -2533,7 +5064,23 @@ def safe_filename_part(value, fallback="file"):
 
 
 
-    value = re.sub(r'[<>:"/\\\**|?*]+', "_", value)
+
+
+
+
+
+
+
+
+    value = re.sub(r'[<>:"/**\\\\\\****|?*]+', "_", value)
+
+
+
+
+
+
+
+
 
 
 
@@ -2542,6 +5089,14 @@ def safe_filename_part(value, fallback="file"):
 
 
     value = re.sub(r"\s+", "_", value).strip(" ._")
+
+
+
+
+
+
+
+
 
 
 
@@ -2573,6 +5128,30 @@ def safe_filename_part(value, fallback="file"):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def find_libreoffice_executable():
 
 
@@ -2581,7 +5160,23 @@ def find_libreoffice_executable():
 
 
 
+
+
+
+
+
+
+
+
     """
+
+
+
+
+
+
+
+
 
 
 
@@ -2605,7 +5200,31 @@ def find_libreoffice_executable():
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     You can also explicitly set:
+
+
+
+
+
+
+
+
 
 
 
@@ -2621,6 +5240,14 @@ def find_libreoffice_executable():
 
 
 
+
+
+
+
+
+
+
+
     """
 
 
@@ -2629,7 +5256,23 @@ def find_libreoffice_executable():
 
 
 
+
+
+
+
+
+
+
+
     configured = os.environ.get("LIBREOFFICE_PATH", "").strip()
+
+
+
+
+
+
+
+
 
 
 
@@ -2653,7 +5296,31 @@ def find_libreoffice_executable():
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     if configured:
+
+
+
+
+
+
+
+
 
 
 
@@ -2677,7 +5344,31 @@ def find_libreoffice_executable():
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     # PATH-based installs (Linux/macOS/Windows).
+
+
+
+
+
+
+
+
 
 
 
@@ -2693,6 +5384,14 @@ def find_libreoffice_executable():
 
 
 
+
+
+
+
+
+
+
+
         found = shutil.which(command)
 
 
@@ -2701,7 +5400,23 @@ def find_libreoffice_executable():
 
 
 
+
+
+
+
+
+
+
+
         if found:
+
+
+
+
+
+
+
+
 
 
 
@@ -2725,7 +5440,31 @@ def find_libreoffice_executable():
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     # Common direct install locations.
+
+
+
+
+
+
+
+
 
 
 
@@ -2741,7 +5480,6 @@ def find_libreoffice_executable():
 
 
 
-        r"C:\P**rogram Files\L**ibreOffice\p**rogram\soffice.exe",
 
 
 
@@ -2749,7 +5487,32 @@ def find_libreoffice_executable():
 
 
 
-        r"C:\P**rogram Files (x86)\L**ibreOffice\p**rogram\soffice.exe",
+
+        r"C:**\P****rogram Files**\L****ibreOffice**\p****rogram\soffice.exe",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        r"C:**\P****rogram Files (x86)**\L****ibreOffice**\p****rogram\soffice.exe",
+
+
+
+
+
+
+
+
 
 
 
@@ -2765,7 +5528,23 @@ def find_libreoffice_executable():
 
 
 
+
+
+
+
+
+
+
+
         "/usr/bin/libreoffice",
+
+
+
+
+
+
+
+
 
 
 
@@ -2781,6 +5560,14 @@ def find_libreoffice_executable():
 
 
 
+
+
+
+
+
+
+
+
         "/usr/local/bin/libreoffice",
 
 
@@ -2789,7 +5576,23 @@ def find_libreoffice_executable():
 
 
 
+
+
+
+
+
+
+
+
         "/usr/local/bin/soffice",
+
+
+
+
+
+
+
+
 
 
 
@@ -2813,7 +5616,31 @@ def find_libreoffice_executable():
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     for candidate in candidates:
+
+
+
+
+
+
+
+
 
 
 
@@ -2829,7 +5656,31 @@ def find_libreoffice_executable():
 
 
 
+
+
+
+
+
+
+
+
             return str(Path(candidate))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2869,7 +5720,39 @@ def find_libreoffice_executable():
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _remove_tree_with_retries(path, attempts=8, delay=0.25):
+
+
+
+
+
+
+
+
 
 
 
@@ -2885,7 +5768,23 @@ def _remove_tree_with_retries(path, attempts=8, delay=0.25):
 
 
 
+
+
+
+
+
+
+
+
     path = Path(path)
+
+
+
+
+
+
+
+
 
 
 
@@ -2901,6 +5800,14 @@ def _remove_tree_with_retries(path, attempts=8, delay=0.25):
 
 
 
+
+
+
+
+
+
+
+
         if not path.exists():
 
 
@@ -2909,7 +5816,23 @@ def _remove_tree_with_retries(path, attempts=8, delay=0.25):
 
 
 
+
+
+
+
+
+
+
+
             return True
+
+
+
+
+
+
+
+
 
 
 
@@ -2925,7 +5848,23 @@ def _remove_tree_with_retries(path, attempts=8, delay=0.25):
 
 
 
+
+
+
+
+
+
+
+
             shutil.rmtree(path)
+
+
+
+
+
+
+
+
 
 
 
@@ -2941,6 +5880,14 @@ def _remove_tree_with_retries(path, attempts=8, delay=0.25):
 
 
 
+
+
+
+
+
+
+
+
         except (PermissionError, OSError):
 
 
@@ -2949,7 +5896,23 @@ def _remove_tree_with_retries(path, attempts=8, delay=0.25):
 
 
 
+
+
+
+
+
+
+
+
             time.sleep(delay)
+
+
+
+
+
+
+
+
 
 
 
@@ -2981,6 +5944,30 @@ def _remove_tree_with_retries(path, attempts=8, delay=0.25):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _cleanup_later(path, delay=2.0):
 
 
@@ -2989,7 +5976,23 @@ def _cleanup_later(path, delay=2.0):
 
 
 
+
+
+
+
+
+
+
+
     """Retry cleanup in a daemon thread so a transient Word lock never breaks a download."""
+
+
+
+
+
+
+
+
 
 
 
@@ -3013,6 +6016,22 @@ def _cleanup_later(path, delay=2.0):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     def worker():
 
 
@@ -3021,7 +6040,23 @@ def _cleanup_later(path, delay=2.0):
 
 
 
+
+
+
+
+
+
+
+
         time.sleep(delay)
+
+
+
+
+
+
+
+
 
 
 
@@ -3045,7 +6080,31 @@ def _cleanup_later(path, delay=2.0):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     thread = threading.Thread(target=worker, daemon=True)
+
+
+
+
+
+
+
+
 
 
 
@@ -3077,6 +6136,30 @@ def _cleanup_later(path, delay=2.0):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def convert_docx_to_pdf_with_word_windows(docx_path, pdf_path):
 
 
@@ -3085,7 +6168,23 @@ def convert_docx_to_pdf_with_word_windows(docx_path, pdf_path):
 
 
 
+
+
+
+
+
+
+
+
     """
+
+
+
+
+
+
+
+
 
 
 
@@ -3109,7 +6208,31 @@ def convert_docx_to_pdf_with_word_windows(docx_path, pdf_path):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     Word sometimes keeps a file handle alive for a moment after COM says the
+
+
+
+
+
+
+
+
 
 
 
@@ -3125,7 +6248,23 @@ def convert_docx_to_pdf_with_word_windows(docx_path, pdf_path):
 
 
 
+
+
+
+
+
+
+
+
     real DOCX file, Word opens a disposable scratch copy instead.
+
+
+
+
+
+
+
+
 
 
 
@@ -3141,7 +6280,23 @@ def convert_docx_to_pdf_with_word_windows(docx_path, pdf_path):
 
 
 
+
+
+
+
+
+
+
+
     if os.name != "nt":
+
+
+
+
+
+
+
+
 
 
 
@@ -3165,7 +6320,31 @@ def convert_docx_to_pdf_with_word_windows(docx_path, pdf_path):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     powershell = (
+
+
+
+
+
+
+
+
 
 
 
@@ -3181,7 +6360,23 @@ def convert_docx_to_pdf_with_word_windows(docx_path, pdf_path):
 
 
 
+
+
+
+
+
+
+
+
         or shutil.which("powershell")
+
+
+
+
+
+
+
+
 
 
 
@@ -3197,7 +6392,23 @@ def convert_docx_to_pdf_with_word_windows(docx_path, pdf_path):
 
 
 
+
+
+
+
+
+
+
+
         or shutil.which("pwsh")
+
+
+
+
+
+
+
+
 
 
 
@@ -3213,7 +6424,23 @@ def convert_docx_to_pdf_with_word_windows(docx_path, pdf_path):
 
 
 
+
+
+
+
+
+
+
+
     if not powershell:
+
+
+
+
+
+
+
+
 
 
 
@@ -3237,7 +6464,31 @@ def convert_docx_to_pdf_with_word_windows(docx_path, pdf_path):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     source_docx = Path(docx_path).resolve()
+
+
+
+
+
+
+
+
 
 
 
@@ -3261,7 +6512,31 @@ def convert_docx_to_pdf_with_word_windows(docx_path, pdf_path):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     # IMPORTANT: Word opens a copy, not the DOCX that is going into the ZIP.
+
+
+
+
+
+
+
+
 
 
 
@@ -3277,7 +6552,23 @@ def convert_docx_to_pdf_with_word_windows(docx_path, pdf_path):
 
 
 
+
+
+
+
+
+
+
+
     # copy is locked, so ZIP creation and cleanup of the real package can finish.
+
+
+
+
+
+
+
+
 
 
 
@@ -3293,7 +6584,23 @@ def convert_docx_to_pdf_with_word_windows(docx_path, pdf_path):
 
 
 
+
+
+
+
+
+
+
+
     scratch_docx = scratch_dir / source_docx.name
+
+
+
+
+
+
+
+
 
 
 
@@ -3317,6 +6624,22 @@ def convert_docx_to_pdf_with_word_windows(docx_path, pdf_path):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     env = os.environ.copy()
 
 
@@ -3325,7 +6648,23 @@ def convert_docx_to_pdf_with_word_windows(docx_path, pdf_path):
 
 
 
+
+
+
+
+
+
+
+
     env["ZAPDOCS_DOCX_PATH"] = str(scratch_docx)
+
+
+
+
+
+
+
+
 
 
 
@@ -3349,7 +6688,31 @@ def convert_docx_to_pdf_with_word_windows(docx_path, pdf_path):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     script = """
+
+
+
+
+
+
+
+
 
 
 
@@ -3365,7 +6728,23 @@ $ErrorActionPreference = "Stop"
 
 
 
+
+
+
+
+
+
+
+
 $word = $null
+
+
+
+
+
+
+
+
 
 
 
@@ -3381,6 +6760,14 @@ $doc = $null
 
 
 
+
+
+
+
+
+
+
+
 try {
 
 
@@ -3389,7 +6776,23 @@ try {
 
 
 
+
+
+
+
+
+
+
+
     $docxPath = $env:ZAPDOCS_DOCX_PATH
+
+
+
+
+
+
+
+
 
 
 
@@ -3413,6 +6816,22 @@ try {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     $word = New-Object -ComObject Word.Application
 
 
@@ -3421,7 +6840,23 @@ try {
 
 
 
+
+
+
+
+
+
+
+
     $word.Visible = $false
+
+
+
+
+
+
+
+
 
 
 
@@ -3445,7 +6880,31 @@ try {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     # Open the disposable scratch copy read-only.
+
+
+
+
+
+
+
+
 
 
 
@@ -3461,6 +6920,14 @@ try {
 
 
 
+
+
+
+
+
+
+
+
     $doc.ExportAsFixedFormat($pdfPath, 17)
 
 
@@ -3469,7 +6936,23 @@ try {
 
 
 
+
+
+
+
+
+
+
+
 }
+
+
+
+
+
+
+
+
 
 
 
@@ -3485,7 +6968,23 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
     if ($doc -ne $null) {
+
+
+
+
+
+
+
+
 
 
 
@@ -3501,7 +7000,23 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
         try { [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($doc) | Out-Null } catch {}
+
+
+
+
+
+
+
+
 
 
 
@@ -3517,7 +7032,23 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
     }
+
+
+
+
+
+
+
+
 
 
 
@@ -3533,7 +7064,23 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
         try { $word.Quit() } catch {}
+
+
+
+
+
+
+
+
 
 
 
@@ -3549,7 +7096,23 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
         $word = $null
+
+
+
+
+
+
+
+
 
 
 
@@ -3565,15 +7128,7 @@ finally {
 
 
 
-    [GC]::Collect()
 
-
-
-
-
-
-
-    [GC]::WaitForPendingFinalizers()
 
 
 
@@ -3589,7 +7144,55 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
     [GC]::WaitForPendingFinalizers()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    [GC]::Collect()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    [GC]::WaitForPendingFinalizers()
+
+
+
+
+
+
+
+
 
 
 
@@ -3598,6 +7201,14 @@ finally {
 
 
 }
+
+
+
+
+
+
+
+
 
 
 
@@ -3621,7 +7232,31 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     try:
+
+
+
+
+
+
+
+
 
 
 
@@ -3637,7 +7272,23 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
             [powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+
+
+
+
+
+
+
+
 
 
 
@@ -3653,7 +7304,23 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
             text=True,
+
+
+
+
+
+
+
+
 
 
 
@@ -3669,6 +7336,14 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
             check=False,
 
 
@@ -3677,7 +7352,23 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
             env=env,
+
+
+
+
+
+
+
+
 
 
 
@@ -3701,6 +7392,22 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         if result.returncode != 0:
 
 
@@ -3709,7 +7416,23 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
             message = result.stderr.strip() or result.stdout.strip()
+
+
+
+
+
+
+
+
 
 
 
@@ -3733,7 +7456,31 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         if not pdf_path.exists():
+
+
+
+
+
+
+
+
 
 
 
@@ -3757,7 +7504,31 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         return pdf_path
+
+
+
+
+
+
+
+
 
 
 
@@ -3773,7 +7544,23 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
         # A transient WINWORD file lock should never turn a successful package
+
+
+
+
+
+
+
+
 
 
 
@@ -3789,7 +7576,23 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
         if not _remove_tree_with_retries(scratch_dir):
+
+
+
+
+
+
+
+
 
 
 
@@ -3821,6 +7624,30 @@ finally {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def convert_docx_to_pdf(docx_path, output_dir):
 
 
@@ -3829,7 +7656,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
     """
+
+
+
+
+
+
+
+
 
 
 
@@ -3853,7 +7696,31 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     Converter order:
+
+
+
+
+
+
+
+
 
 
 
@@ -3869,7 +7736,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
       2. Microsoft Word through PowerShell/COM -- easiest for local Windows.
+
+
+
+
+
+
+
+
 
 
 
@@ -3893,7 +7776,31 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     A real document renderer is required. docxtpl/python-docx can create DOCX
+
+
+
+
+
+
+
+
 
 
 
@@ -3909,7 +7816,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
     """
+
+
+
+
+
+
+
+
 
 
 
@@ -3925,7 +7848,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
     output_dir = Path(output_dir)
+
+
+
+
+
+
+
+
 
 
 
@@ -3941,7 +7880,31 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
     expected_pdf = output_dir / f"{docx_path.stem}.pdf"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -3973,7 +7936,39 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     libreoffice = find_libreoffice_executable()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -3997,6 +7992,14 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
         profile_dir = output_dir / f".lo_profile_{uuid.uuid4().hex}"
 
 
@@ -4005,7 +8008,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
         profile_dir.mkdir(parents=True, exist_ok=True)
+
+
+
+
+
+
+
+
 
 
 
@@ -4029,7 +8048,31 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         command = [
+
+
+
+
+
+
+
+
 
 
 
@@ -4045,7 +8088,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
             "--headless",
+
+
+
+
+
+
+
+
 
 
 
@@ -4061,7 +8120,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
             "--nodefault",
+
+
+
+
+
+
+
+
 
 
 
@@ -4077,7 +8152,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
             "--nolockcheck",
+
+
+
+
+
+
+
+
 
 
 
@@ -4093,7 +8184,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
             "--convert-to",
+
+
+
+
+
+
+
+
 
 
 
@@ -4109,7 +8216,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
             "--outdir",
+
+
+
+
+
+
+
+
 
 
 
@@ -4125,7 +8248,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
             str(docx_path),
+
+
+
+
+
+
+
+
 
 
 
@@ -4149,7 +8288,31 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         try:
+
+
+
+
+
+
+
+
 
 
 
@@ -4165,7 +8328,31 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
                 expected_pdf.unlink()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -4189,7 +8376,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
                 command,
+
+
+
+
+
+
+
+
 
 
 
@@ -4205,7 +8408,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
                 text=True,
+
+
+
+
+
+
+
+
 
 
 
@@ -4221,6 +8440,14 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
                 check=False,
 
 
@@ -4229,7 +8456,31 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
             )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -4253,7 +8504,31 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
                 return expected_pdf
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -4277,7 +8552,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
                 "LibreOffice: "
+
+
+
+
+
+
+
+
 
 
 
@@ -4293,7 +8584,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
                     result.stderr.strip()
+
+
+
+
+
+
+
+
 
 
 
@@ -4309,7 +8616,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
                     or f"exited with code {result.returncode}."
+
+
+
+
+
+
+
+
 
 
 
@@ -4325,7 +8648,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
             )
+
+
+
+
+
+
+
+
 
 
 
@@ -4341,7 +8680,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
             errors.append(f"LibreOffice: {exc}")
+
+
+
+
+
+
+
+
 
 
 
@@ -4357,6 +8712,14 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
             shutil.rmtree(profile_dir, ignore_errors=True)
 
 
@@ -4365,7 +8728,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
     else:
+
+
+
+
+
+
+
+
 
 
 
@@ -4389,7 +8768,31 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     if os.name == "nt":
+
+
+
+
+
+
+
+
 
 
 
@@ -4405,6 +8808,14 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
             if expected_pdf.exists():
 
 
@@ -4413,7 +8824,31 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
                 expected_pdf.unlink()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -4437,7 +8872,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
             if pdf.exists():
+
+
+
+
+
+
+
+
 
 
 
@@ -4453,7 +8904,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
         except Exception as exc:
+
+
+
+
+
+
+
+
 
 
 
@@ -4469,7 +8936,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
     else:
+
+
+
+
+
+
+
+
 
 
 
@@ -4493,7 +8976,31 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     try:
+
+
+
+
+
+
+
+
 
 
 
@@ -4509,7 +9016,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
     except ImportError:
+
+
+
+
+
+
+
+
 
 
 
@@ -4533,7 +9056,31 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     if word_convert is not None:
+
+
+
+
+
+
+
+
 
 
 
@@ -4549,7 +9096,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
             if expected_pdf.exists():
+
+
+
+
+
+
+
+
 
 
 
@@ -4573,6 +9136,22 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
             word_convert(str(docx_path), str(expected_pdf))
 
 
@@ -4581,7 +9160,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
             if expected_pdf.exists():
+
+
+
+
+
+
+
+
 
 
 
@@ -4605,7 +9200,31 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
             errors.append("docx2pdf: finished without creating the PDF.")
+
+
+
+
+
+
+
+
 
 
 
@@ -4621,6 +9240,14 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
             errors.append(f"docx2pdf: {exc}")
 
 
@@ -4629,7 +9256,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
     else:
+
+
+
+
+
+
+
+
 
 
 
@@ -4653,7 +9296,31 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     raise RuntimeError(
+
+
+
+
+
+
+
+
 
 
 
@@ -4669,7 +9336,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
         "If this backend is running on your Windows PC, install Microsoft Word "
+
+
+
+
+
+
+
+
 
 
 
@@ -4685,7 +9368,23 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
         "install LibreOffice on the server/container. Details: "
+
+
+
+
+
+
+
+
 
 
 
@@ -4701,7 +9400,39 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
 
 
+
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -4733,7 +9464,31 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
     context = {}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -4757,7 +9512,31 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
         raw = str(fields.get(name, "") or "").strip()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -4781,7 +9560,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
             try:
+
+
+
+
+
+
+
+
 
 
 
@@ -4797,6 +9592,14 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
             except ValueError:
 
 
@@ -4805,7 +9608,31 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
                 pass
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -4837,7 +9664,31 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     try:
+
+
+
+
+
+
+
+
 
 
 
@@ -4853,7 +9704,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
             str(fields.get("LOAN_AMOUNT", "0")).replace(",", "")
+
+
+
+
+
+
+
+
 
 
 
@@ -4869,7 +9736,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
     except (ValueError, TypeError):
+
+
+
+
+
+
+
+
 
 
 
@@ -4893,6 +9776,22 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     # The Deed of Trust dateline ("made this {{NOTE_DAY}} day of
 
 
@@ -4901,7 +9800,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
     # {{NOTE_MONTH}} {{NOTE_YEAR}}") is always driven off the note date.
+
+
+
+
+
+
+
+
 
 
 
@@ -4925,7 +9840,31 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     if note_dt:
+
+
+
+
+
+
+
+
 
 
 
@@ -4941,7 +9880,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
         context["YEAR"] = note_dt.strftime("%Y")
+
+
+
+
+
+
+
+
 
 
 
@@ -4957,7 +9912,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
         # Used by the CA Deed of Trust: "made this 13th day of August 2026"
+
+
+
+
+
+
+
+
 
 
 
@@ -4973,7 +9944,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
         context["NOTE_MONTH"] = note_dt.strftime("%B")
+
+
+
+
+
+
+
+
 
 
 
@@ -4989,7 +9976,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
         # Normalize however it was typed, so the note, the deed, and the rest
+
+
+
+
+
+
+
+
 
 
 
@@ -5005,7 +10008,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
         context["NOTE_DATE"] = long_date(note_dt)
+
+
+
+
+
+
+
+
 
 
 
@@ -5021,7 +10040,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
         context["MONTH"] = ""
+
+
+
+
+
+
+
+
 
 
 
@@ -5037,7 +10072,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
         context["DATE"] = ""
+
+
+
+
+
+
+
+
 
 
 
@@ -5053,7 +10104,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
         context["NOTE_MONTH"] = ""
+
+
+
+
+
+
+
+
 
 
 
@@ -5077,6 +10144,22 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     # Payments table (Note, Section 3)
 
 
@@ -5085,7 +10168,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
     payment_rows = build_payment_rows(fields)
+
+
+
+
+
+
+
+
 
 
 
@@ -5109,7 +10208,31 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     # Handy for body text that references the schedule as a whole.
+
+
+
+
+
+
+
+
 
 
 
@@ -5125,7 +10248,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
     for row in payment_rows:
+
+
+
+
+
+
+
+
 
 
 
@@ -5141,7 +10280,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
             total += int(str(row["COUNT"]).strip())
+
+
+
+
+
+
+
+
 
 
 
@@ -5157,6 +10312,14 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
             total = 0
 
 
@@ -5165,7 +10328,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
             break
+
+
+
+
+
+
+
+
 
 
 
@@ -5189,7 +10368,31 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     # The Deed of Trust footer uses LOAN_NAME where other docs use LOAN_NUMBER
+
+
+
+
+
+
+
+
 
 
 
@@ -5213,7 +10416,31 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     # The CA Boiler package uses FIRST_PAYMENT_DATE where other docs use FIRST_PAYMENT
+
+
+
+
+
+
+
+
 
 
 
@@ -5237,7 +10464,31 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     # The CA Note's payments table has {{MONTLY_PAYMENT}} misspelled in the
+
+
+
+
+
+
+
+
 
 
 
@@ -5253,6 +10504,14 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
     # tag in Word. Fix the template when convenient and this can go away.
 
 
@@ -5261,7 +10520,41 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
     context["MONTLY_PAYMENT"] = context.get("MONTHLY_PAYMENT", "")
+    # New CA Note fields. Prefer explicit values; preserve existing saved loan defaults.
+    context["FIRST_PAYMENT_DATE"] = (context.get("FIRST_PAYMENT_DATE")
+        or context.get("FIRST_PAYMENT_DUE") or context.get("FIRST_PAYMENT", ""))
+    context["FIRST_PREPAID"] = (context.get("FIRST_PREPAID")
+        or context.get("FIRST_PREPAID_MONTH", ""))
+    context["LAST_PREPAID"] = (context.get("LAST_PREPAID")
+        or context.get("LAST_PREPAID_MONTH", ""))
+    context["PREPAYMENT_PENALTY"] = (context.get("PREPAYMENT_PENALTY")
+        or context.get("PREPAYMENT_PREMIUM", ""))
+    # Deed of Trust new brokerage/trustee address placeholders are direct fields.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -5285,6 +10578,14 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
     # to NOTE_DATE if it wasn't entered separately, so existing loans still render.
 
 
@@ -5293,7 +10594,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
     if not context.get("SERVICING_DATE"):
+
+
+
+
+
+
+
+
 
 
 
@@ -5317,7 +10634,27 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     # Only expose/populate the second signature block when a second borrower exists.
+
+
+
+
 
 
 
@@ -5325,7 +10662,15 @@ def build_context(fields):
 
 
 
+
+
+
+
     #
+
+
+
+
 
 
 
@@ -5333,7 +10678,15 @@ def build_context(fields):
 
 
 
+
+
+
+
     #   By: ______________________________
+
+
+
+
 
 
 
@@ -5341,7 +10694,15 @@ def build_context(fields):
 
 
 
+
+
+
+
     #   {{SIGNATURE_TITLE_2}}
+
+
+
+
 
 
 
@@ -5349,7 +10710,15 @@ def build_context(fields):
 
 
 
+
+
+
+
     #
+
+
+
+
 
 
 
@@ -5357,7 +10726,15 @@ def build_context(fields):
 
 
 
+
+
+
+
     has_second_borrower = bool(
+
+
+
+
 
 
 
@@ -5365,7 +10742,15 @@ def build_context(fields):
 
 
 
+
+
+
+
     )
+
+
+
+
 
 
 
@@ -5377,7 +10762,19 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
     if not has_second_borrower:
+
+
+
+
 
 
 
@@ -5385,11 +10782,35 @@ def build_context(fields):
 
 
 
+
+
+
+
         context["SIGNATURE_FOOTER_2"] = ""
 
 
 
+
+
+
+
         context["SIGNATURE_TITLE_2"] = ""
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -5429,7 +10850,39 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
 
 
 
@@ -5445,7 +10898,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
 #
+
+
+
+
+
+
+
+
 
 
 
@@ -5461,7 +10930,23 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
 # template — it's built directly with python-docx. That means it works for
+
+
+
+
+
+
+
+
 
 
 
@@ -5477,6 +10962,14 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
 # any new field just needs a row added to key_provisions_rows() below.
 
 
@@ -5485,7 +10978,31 @@ def build_context(fields):
 
 
 
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -5509,7 +11026,23 @@ def _kp_property_line(fields):
 
 
 
+
+
+
+
+
+
+
+
     """'107 Sandal Lane #2' + 'Palm Beach Shores' + 'Florida' + '33404'
+
+
+
+
+
+
+
+
 
 
 
@@ -5525,7 +11058,23 @@ def _kp_property_line(fields):
 
 
 
+
+
+
+
+
+
+
+
     address = str(fields.get("PROPERTY_ADDRESS", "") or "").strip()
+
+
+
+
+
+
+
+
 
 
 
@@ -5541,7 +11090,23 @@ def _kp_property_line(fields):
 
 
 
+
+
+
+
+
+
+
+
     state_name = str(fields.get("PROPERTY_STATE", "") or "").strip()
+
+
+
+
+
+
+
+
 
 
 
@@ -5565,6 +11130,22 @@ def _kp_property_line(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     state_zip = " ".join(p for p in [state_name, zip_code] if p)
 
 
@@ -5573,7 +11154,31 @@ def _kp_property_line(fields):
 
 
 
+
+
+
+
+
+
+
+
     city_state_zip = ", ".join(p for p in [city, state_zip] if p)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -5613,7 +11218,39 @@ def _kp_property_line(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _kp_borrower_line(fields):
+
+
+
+
+
+
+
+
 
 
 
@@ -5629,7 +11266,23 @@ def _kp_borrower_line(fields):
 
 
 
+
+
+
+
+
+
+
+
         str(fields.get("BORROWER_1", "") or "").strip(),
+
+
+
+
+
+
+
+
 
 
 
@@ -5645,7 +11298,23 @@ def _kp_borrower_line(fields):
 
 
 
+
+
+
+
+
+
+
+
     ]
+
+
+
+
+
+
+
+
 
 
 
@@ -5677,6 +11346,30 @@ def _kp_borrower_line(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _kp_lender_line(fields):
 
 
@@ -5685,7 +11378,23 @@ def _kp_lender_line(fields):
 
 
 
+
+
+
+
+
+
+
+
     name = str(fields.get("LENDER_NAME", "") or "").strip()
+
+
+
+
+
+
+
+
 
 
 
@@ -5717,7 +11426,39 @@ def _kp_lender_line(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _kp_payments_line(fields):
+
+
+
+
+
+
+
+
 
 
 
@@ -5733,7 +11474,23 @@ def _kp_payments_line(fields):
 
 
 
+
+
+
+
+
+
+
+
     n = str(fields.get("NUMBER_OF_PAYMENTS", "") or "").strip()
+
+
+
+
+
+
+
+
 
 
 
@@ -5749,7 +11506,23 @@ def _kp_payments_line(fields):
 
 
 
+
+
+
+
+
+
+
+
         return ""
+
+
+
+
+
+
+
+
 
 
 
@@ -5781,7 +11554,39 @@ def _kp_payments_line(fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def key_provisions_rows(fields, context, state):
+
+
+
+
+
+
+
+
 
 
 
@@ -5797,7 +11602,23 @@ def key_provisions_rows(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
     plus a couple of CA-specific rows (Trustee, LTV) appended when present."""
+
+
+
+
+
+
+
+
 
 
 
@@ -5813,7 +11634,23 @@ def key_provisions_rows(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
         ("Document Date:", context.get("NOTE_DATE", "")),
+
+
+
+
+
+
+
+
 
 
 
@@ -5829,7 +11666,23 @@ def key_provisions_rows(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
         ("Property:", _kp_property_line(fields)),
+
+
+
+
+
+
+
+
 
 
 
@@ -5845,7 +11698,23 @@ def key_provisions_rows(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
         ("Lender:", _kp_lender_line(fields)),
+
+
+
+
+
+
+
+
 
 
 
@@ -5861,7 +11730,23 @@ def key_provisions_rows(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
         ("Guarantor Recourse:", str(fields.get("GUARANTOR_RECOURSE", "") or "").strip()),
+
+
+
+
+
+
+
+
 
 
 
@@ -5877,7 +11762,23 @@ def key_provisions_rows(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
         ("Interest Rate:", percent(fields.get("INTEREST_RATE", ""))),
+
+
+
+
+
+
+
+
 
 
 
@@ -5893,7 +11794,23 @@ def key_provisions_rows(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
         ("Principal and Interest Monthly Payment Amount:", money(fields.get("MONTHLY_PAYMENT", ""))),
+
+
+
+
+
+
+
+
 
 
 
@@ -5909,6 +11826,14 @@ def key_provisions_rows(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
         ("Maturity Date:", context.get("MATURITY_DATE", "")),
 
 
@@ -5917,7 +11842,23 @@ def key_provisions_rows(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
         ("Prepayment Premium:", str(fields.get("PREPAYMENT_PREMIUM", "") or "").strip()),
+
+
+
+
+
+
+
+
 
 
 
@@ -5941,7 +11882,31 @@ def key_provisions_rows(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     if state == "CA":
+
+
+
+
+
+
+
+
 
 
 
@@ -5957,7 +11922,23 @@ def key_provisions_rows(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
         if trustee:
+
+
+
+
+
+
+
+
 
 
 
@@ -5981,7 +11962,31 @@ def key_provisions_rows(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         ltv = str(fields.get("LTV", "") or "").strip()
+
+
+
+
+
+
+
+
 
 
 
@@ -5997,7 +12002,31 @@ def key_provisions_rows(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
             rows.append(("Loan-to-Value (LTV):", percent(ltv)))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -6037,7 +12066,39 @@ def key_provisions_rows(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _set_cell_border(cell, size=4, color="000000"):
+
+
+
+
+
+
+
+
 
 
 
@@ -6053,7 +12114,23 @@ def _set_cell_border(cell, size=4, color="000000"):
 
 
 
+
+
+
+
+
+
+
+
     raw <w:tcBorders> XML so the table renders with visible ruled lines,
+
+
+
+
+
+
+
+
 
 
 
@@ -6069,7 +12146,23 @@ def _set_cell_border(cell, size=4, color="000000"):
 
 
 
+
+
+
+
+
+
+
+
     tc = cell._tc
+
+
+
+
+
+
+
+
 
 
 
@@ -6093,7 +12186,31 @@ def _set_cell_border(cell, size=4, color="000000"):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     tcBorders = tcPr.find(qn("w:tcBorders"))
+
+
+
+
+
+
+
+
 
 
 
@@ -6109,7 +12226,23 @@ def _set_cell_border(cell, size=4, color="000000"):
 
 
 
+
+
+
+
+
+
+
+
         tcBorders = OxmlElement("w:tcBorders")
+
+
+
+
+
+
+
+
 
 
 
@@ -6133,7 +12266,31 @@ def _set_cell_border(cell, size=4, color="000000"):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     for edge in ("top", "bottom", "left", "right"):
+
+
+
+
+
+
+
+
 
 
 
@@ -6149,7 +12306,23 @@ def _set_cell_border(cell, size=4, color="000000"):
 
 
 
+
+
+
+
+
+
+
+
         element = tcBorders.find(qn(tag))
+
+
+
+
+
+
+
+
 
 
 
@@ -6165,7 +12338,23 @@ def _set_cell_border(cell, size=4, color="000000"):
 
 
 
+
+
+
+
+
+
+
+
             element = OxmlElement(tag)
+
+
+
+
+
+
+
+
 
 
 
@@ -6181,7 +12370,23 @@ def _set_cell_border(cell, size=4, color="000000"):
 
 
 
+
+
+
+
+
+
+
+
         element.set(qn("w:val"), "single")
+
+
+
+
+
+
+
+
 
 
 
@@ -6197,7 +12402,23 @@ def _set_cell_border(cell, size=4, color="000000"):
 
 
 
+
+
+
+
+
+
+
+
         element.set(qn("w:space"), "0")
+
+
+
+
+
+
+
+
 
 
 
@@ -6229,7 +12450,39 @@ def _set_cell_border(cell, size=4, color="000000"):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def build_key_provisions_docx(fields, context, state):
+
+
+
+
+
+
+
+
 
 
 
@@ -6245,7 +12498,23 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
     centered bold title, two-column ruled table — label / value)."""
+
+
+
+
+
+
+
+
 
 
 
@@ -6269,7 +12538,31 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     section = doc.sections[0]
+
+
+
+
+
+
+
+
 
 
 
@@ -6285,7 +12578,23 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
     section.page_height = Inches(11)
+
+
+
+
+
+
+
+
 
 
 
@@ -6301,6 +12610,14 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
     section.right_margin = Inches(1)
 
 
@@ -6309,7 +12626,23 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
     section.top_margin = Inches(1)
+
+
+
+
+
+
+
+
 
 
 
@@ -6333,7 +12666,31 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     title_paragraph = doc.add_paragraph()
+
+
+
+
+
+
+
+
 
 
 
@@ -6349,7 +12706,23 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
     title_run = title_paragraph.add_run("KEY PROVISIONS SUMMARY")
+
+
+
+
+
+
+
+
 
 
 
@@ -6365,7 +12738,31 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
     title_run.font.size = Pt(13)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -6397,7 +12794,31 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     label_width = Inches(2.6)
+
+
+
+
+
+
+
+
 
 
 
@@ -6421,7 +12842,31 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     table = doc.add_table(rows=len(rows), cols=2)
+
+
+
+
+
+
+
+
 
 
 
@@ -6445,6 +12890,22 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     for i, (label, value) in enumerate(rows):
 
 
@@ -6453,7 +12914,23 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
         label_cell = table.cell(i, 0)
+
+
+
+
+
+
+
+
 
 
 
@@ -6477,7 +12954,31 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         label_cell.width = label_width
+
+
+
+
+
+
+
+
 
 
 
@@ -6501,7 +13002,31 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         label_cell.paragraphs[0].add_run(label)
+
+
+
+
+
+
+
+
 
 
 
@@ -6525,7 +13050,31 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         for cell in (label_cell, value_cell):
+
+
+
+
+
+
+
+
 
 
 
@@ -6541,7 +13090,23 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
             for paragraph in cell.paragraphs:
+
+
+
+
+
+
+
+
 
 
 
@@ -6557,7 +13122,31 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
                     run.font.size = Pt(10.5)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -6597,7 +13186,39 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
 
 
 
@@ -6613,7 +13234,31 @@ def build_key_provisions_docx(fields, context, state):
 
 
 
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -6630,41 +13275,78 @@ def build_key_provisions_docx(fields, context, state):
 
 
 def build_ca_combined_docx(rendered_documents, destination):
+
     """Combine already-rendered CA DOCX files, preserving Word formatting.
 
+
+
     Each section starts on a separate page. The individual documents remain
+
     available in the ZIP. A missing section fails rather than silently creating
+
     an incomplete closing package.
+
     """
+
     missing = [label for label in CA_COMBINED_DOCUMENT_ORDER
+
                if label not in rendered_documents]
+
     if missing:
+
         raise RuntimeError(
+
             "Cannot build combined California package; missing sections: "
+
             + ", ".join(missing)
+
         )
 
+
+
     first = PyDocxDocument(str(rendered_documents[CA_COMBINED_DOCUMENT_ORDER[0]]))
+
     composer = Composer(first)
+
     for label in CA_COMBINED_DOCUMENT_ORDER[1:]:
+
         # A page break is inserted before each following section.
+
         first.add_page_break()
+
         composer.append(PyDocxDocument(str(rendered_documents[label])))
+
     composer.save(str(destination))
+
     return destination
+
+
+
 
 
 @app.route("/api/loans", methods=["GET"])
 
+
+
 @require_auth
+
+
 
 def list_loans():
 
+
+
     result = (_db.table("loans").select("id,label")
+
+
 
               .eq("user_id", g.user_id)
 
+
+
               .order("created_at", desc=False).execute())
+
+
 
     return jsonify(result.data or [])
 
@@ -6672,31 +13354,63 @@ def list_loans():
 
 
 
+
+
+
+
+
+
 @app.route("/api/loans", methods=["POST"])
+
+
 
 @require_auth
 
+
+
 def create_loan():
+
+
 
     # UUID-based default labels avoid an unnecessary count query and races.
 
+
+
     loan_id = str(uuid.uuid4())
+
+
 
     fields = empty_fields()
 
+
+
     label = "New Loan"
+
+
 
     result = (_db.table("loans").insert({
 
+
+
         "id": loan_id, "user_id": g.user_id,
+
+
 
         "label": label, "fields": fields
 
+
+
     }).execute())
+
+
 
     record = result.data[0]
 
+
+
     return jsonify({"id": record["id"], "label": record["label"],
+
+
 
                     "fields": record["fields"]}), 201
 
@@ -6704,29 +13418,59 @@ def create_loan():
 
 
 
+
+
+
+
+
+
 @app.route("/api/loans/<loan_id>", methods=["GET"])
+
+
 
 @require_auth
 
+
+
 def get_loan(loan_id):
+
+
 
     record = user_loan(loan_id)
 
+
+
     if record is None:
+
+
 
         return jsonify({"error": "Loan not found"}), 404
 
+
+
     fields = empty_fields()
+
+
 
     saved = record.get("fields") or {}
 
+
+
     fields.update({key: saved.get(key, "") for key in ALL_FIELDS})
+
+
 
     fields["STATE"] = fields["STATE"] or "FL"
 
+
+
     fields["PAYMENT_ROWS"] = clean_payment_rows(saved.get("PAYMENT_ROWS"))
 
+
+
     return jsonify({"id": record["id"], "label": record["label"],
+
+
 
                     "fields": fields})
 
@@ -6734,57 +13478,115 @@ def get_loan(loan_id):
 
 
 
+
+
+
+
+
+
 @app.route("/api/loans/<loan_id>", methods=["PUT"])
+
+
 
 @require_auth
 
+
+
 def update_loan(loan_id):
+
+
 
     record = user_loan(loan_id)
 
+
+
     if record is None:
 
+
+
         return jsonify({"error": "Loan not found"}), 404
+
+
 
     body = request.get_json(silent=True) or {}
 
+
+
     if not isinstance(body, dict) or not isinstance(body.get("fields"), dict):
+
+
 
         return jsonify({"error": "A fields object is required"}), 400
 
+
+
     submitted = body["fields"]
+
+
 
     saved = record.get("fields") or {}
 
+
+
     fields = empty_fields()
+
+
 
     fields.update(saved)
 
+
+
     # Allow older frontends to omit newly added fields without erasing them.
+
+
 
     fields.update({key: submitted[key] for key in ALL_FIELDS if key in submitted})
 
+
+
     if "PAYMENT_ROWS" in submitted:
+
+
 
         fields["PAYMENT_ROWS"] = clean_payment_rows(submitted["PAYMENT_ROWS"])
 
+
+
     label_value = body.get("label")
+
+
 
     label = label_value.strip() if isinstance(label_value, str) else ""
 
+
+
     label = label or default_label(fields)
+
+
 
     result = (_db.table("loans").update({
 
+
+
         "label": label, "fields": fields,
+
+
 
         "updated_at": datetime.now().astimezone().isoformat()
 
+
+
     }).eq("id", loan_id).eq("user_id", g.user_id).execute())
+
+
 
     if not result.data:
 
+
+
         return jsonify({"error": "Loan not found"}), 404
+
+
 
     return jsonify({"id": loan_id, "label": label, "fields": fields})
 
@@ -6792,19 +13594,39 @@ def update_loan(loan_id):
 
 
 
+
+
+
+
+
+
 @app.route("/api/loans/<loan_id>", methods=["DELETE"])
+
+
 
 @require_auth
 
+
+
 def delete_loan(loan_id):
+
+
 
     if user_loan(loan_id) is None:
 
+
+
         return jsonify({"error": "Loan not found"}), 404
+
+
 
     (_db.table("loans").delete()
 
+
+
      .eq("id", loan_id).eq("user_id", g.user_id).execute())
+
+
 
     return jsonify({"deleted": loan_id})
 
@@ -6812,7 +13634,15 @@ def delete_loan(loan_id):
 
 
 
+
+
+
+
+
+
 # =====================
+
+
 
 # API: GENERATE DOCUMENTS FOR A SAVED LOAN
 
@@ -6822,7 +13652,31 @@ def delete_loan(loan_id):
 
 
 
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -6840,7 +13694,17 @@ def delete_loan(loan_id):
 
 @app.route("/api/loans/<loan_id>/generate", methods=["POST"])
 
+
+
 @require_auth
+
+
+
+
+
+
+
+
 
 
 
@@ -6856,11 +13720,25 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
     record = user_loan(loan_id)
+
+
 
     if record is None:
 
+
+
         return jsonify({"error": "Loan not found"}), 404
+
+
 
     fields = record.get("fields") or {}
 
@@ -6870,7 +13748,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
     context = build_context(fields)
+
+
+
+
+
+
+
+
 
 
 
@@ -6894,6 +13788,22 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     state = (fields.get("STATE") or "FL").strip().upper()
 
 
@@ -6902,7 +13812,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
     if state not in TEMPLATES_BY_STATE:
+
+
+
+
+
+
+
+
 
 
 
@@ -6926,7 +13852,27 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     templates_to_render = {
+
+
+
+
 
 
 
@@ -6934,11 +13880,27 @@ def generate(loan_id):
 
 
 
+
+
+
+
         **COMMON_TEMPLATES,
 
 
 
+
+
+
+
     }
+
+
+
+
+
+
+
+
 
 
 
@@ -6962,7 +13924,31 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     # PDFs need real files on disk for LibreOffice/Word conversion. Do not use
+
+
+
+
+
+
+
+
 
 
 
@@ -6978,7 +13964,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
     # a fraction of a second and TemporaryDirectory treats that cleanup delay as
+
+
+
+
+
+
+
+
 
 
 
@@ -6994,7 +13996,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
     # merely because Windows is late releasing a temporary file.
+
+
+
+
+
+
+
+
 
 
 
@@ -7010,7 +14028,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
     try:
+
+
+
+
+
+
+
+
 
 
 
@@ -7034,6 +14068,22 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
 
 
@@ -7042,8 +14092,25 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
             rendered_documents = {}
+
             for doc_label, template_file in templates_to_render.items():
+
+
+
+
+
+
+
+
 
 
 
@@ -7059,7 +14126,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
                 if not template_path.exists():
+
+
+
+
+
+
+
+
 
 
 
@@ -7075,7 +14158,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
                         "error": f"Template file not found: {template_file}"
+
+
+
+
+
+
+
+
 
 
 
@@ -7099,7 +14198,31 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
                 doc = DocxTemplate(str(template_path))
+
+
+
+
+
+
+
+
 
 
 
@@ -7123,7 +14246,31 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
                 safe_label = safe_filename_part(doc_label, "Document")
+
+
+
+
+
+
+
+
 
 
 
@@ -7139,7 +14286,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
                 docx_filename = f"{base_name}.docx"
+
+
+
+
+
+
+
+
 
 
 
@@ -7163,7 +14326,31 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
                 # 1) Save the rendered Word document to the package temp folder.
+
+
+
+
+
+
+
+
 
 
 
@@ -7179,8 +14366,33 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
                 doc.save(str(docx_path))
+
                 rendered_documents[doc_label] = docx_path
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -7204,7 +14416,31 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
                 zf.write(docx_path, arcname=docx_filename)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -7228,6 +14464,14 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
                 #    converter itself gives Word a scratch copy, preventing Word
 
 
@@ -7236,7 +14480,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
                 #    from locking this package's real DOCX file.
+
+
+
+
+
+
+
+
 
 
 
@@ -7260,7 +14520,31 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
                 # 4) Put the matching PDF into the same ZIP.
+
+
+
+
+
+
+
+
 
 
 
@@ -7284,15 +14568,47 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
             if state == "CA":
+
                 combined_filename = f"CA_Combined_Closing_Package_Loan_{safe_loan_number}.docx"
+
                 combined_docx = temp_dir / combined_filename
+
                 build_ca_combined_docx(rendered_documents, combined_docx)
+
                 zf.write(combined_docx, arcname=combined_filename)
+
                 combined_pdf = convert_docx_to_pdf(combined_docx, temp_dir)
+
                 zf.write(combined_pdf, arcname=combined_pdf.name)
 
+
+
             # Key Provisions Summary — generated directly (not from a .docx
+
+
+
+
+
+
+
+
 
 
 
@@ -7308,7 +14624,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
             # needing its own template file.
+
+
+
+
+
+
+
+
 
 
 
@@ -7324,6 +14656,14 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
             kp_base_name = f"Key_Provisions_Summary_Loan_{safe_loan_number}"
 
 
@@ -7332,7 +14672,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
             kp_docx_filename = f"{kp_base_name}.docx"
+
+
+
+
+
+
+
+
 
 
 
@@ -7356,6 +14712,22 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
             kp_docx_path = temp_dir / kp_docx_filename
 
 
@@ -7364,7 +14736,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
             kp_doc.save(str(kp_docx_path))
+
+
+
+
+
+
+
+
 
 
 
@@ -7388,7 +14776,31 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
             kp_pdf_path = convert_docx_to_pdf(kp_docx_path, temp_dir)
+
+
+
+
+
+
+
+
 
 
 
@@ -7412,7 +14824,31 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         zip_buffer.seek(0)
+
+
+
+
+
+
+
+
 
 
 
@@ -7436,7 +14872,31 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         response = send_file(
+
+
+
+
+
+
+
+
 
 
 
@@ -7452,7 +14912,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
             as_attachment=True,
+
+
+
+
+
+
+
+
 
 
 
@@ -7468,6 +14944,14 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
             mimetype="application/zip",
 
 
@@ -7476,7 +14960,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
         )
+
+
+
+
+
+
+
+
 
 
 
@@ -7500,7 +15000,31 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     except RuntimeError as exc:
+
+
+
+
+
+
+
+
 
 
 
@@ -7516,6 +15040,14 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
         # that contains only Word documents.
 
 
@@ -7524,7 +15056,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
         return jsonify({
+
+
+
+
+
+
+
+
 
 
 
@@ -7540,6 +15088,14 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
             "details": str(exc),
 
 
@@ -7548,7 +15104,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
         }), 500
+
+
+
+
+
+
+
+
 
 
 
@@ -7564,7 +15136,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
         app.logger.exception("Document package generation failed")
+
+
+
+
+
+
+
+
 
 
 
@@ -7580,7 +15168,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
             "error": "Could not generate the document package.",
+
+
+
+
+
+
+
+
 
 
 
@@ -7596,7 +15200,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
         }), 500
+
+
+
+
+
+
+
+
 
 
 
@@ -7612,7 +15232,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
         # Cleanup is deliberately best-effort. The ZIP lives in memory, so all
+
+
+
+
+
+
+
+
 
 
 
@@ -7628,6 +15264,14 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
         # retry asynchronously instead of turning a successful download into 500.
 
 
@@ -7636,7 +15280,23 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
         if not _remove_tree_with_retries(temp_dir):
+
+
+
+
+
+
+
+
 
 
 
@@ -7668,7 +15328,39 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
 
 
 
@@ -7684,7 +15376,31 @@ def generate(loan_id):
 
 
 
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -7702,7 +15418,17 @@ def generate(loan_id):
 
 @app.route("/api/loans/<loan_id>/generate-lender-instructions", methods=["POST"])
 
+
+
 @require_auth
+
+
+
+
+
+
+
+
 
 
 
@@ -7718,11 +15444,25 @@ def generate_lender_instructions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
     record = user_loan(loan_id)
+
+
 
     if record is None:
 
+
+
         return jsonify({"error": "Loan not found"}), 404
+
+
 
     fields = record.get("fields") or {}
 
@@ -7732,7 +15472,23 @@ def generate_lender_instructions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
     context = build_context(fields)
+
+
+
+
+
+
+
+
 
 
 
@@ -7756,6 +15512,22 @@ def generate_lender_instructions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     state = (fields.get("STATE") or "FL").strip().upper()
 
 
@@ -7764,7 +15536,23 @@ def generate_lender_instructions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
     if state not in TEMPLATES_BY_STATE:
+
+
+
+
+
+
+
+
 
 
 
@@ -7788,7 +15576,31 @@ def generate_lender_instructions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     doc_key = LENDER_INSTRUCTIONS_DOC_KEY.get(state)
+
+
+
+
+
+
+
+
 
 
 
@@ -7812,7 +15624,31 @@ def generate_lender_instructions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     if not template_file:
+
+
+
+
+
+
+
+
 
 
 
@@ -7828,7 +15664,23 @@ def generate_lender_instructions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
             "error": f"No lender instructions template is configured for {state}."
+
+
+
+
+
+
+
+
 
 
 
@@ -7852,7 +15704,31 @@ def generate_lender_instructions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     doc = DocxTemplate(str(BASE_DIR / template_file))
+
+
+
+
+
+
+
+
 
 
 
@@ -7876,7 +15752,31 @@ def generate_lender_instructions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     doc_buffer = io.BytesIO()
+
+
+
+
+
+
+
+
 
 
 
@@ -7892,7 +15792,31 @@ def generate_lender_instructions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
     doc_buffer.seek(0)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -7924,7 +15848,31 @@ def generate_lender_instructions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     return send_file(
+
+
+
+
+
+
+
+
 
 
 
@@ -7940,7 +15888,23 @@ def generate_lender_instructions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
         as_attachment=True,
+
+
+
+
+
+
+
+
 
 
 
@@ -7956,7 +15920,23 @@ def generate_lender_instructions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+
+
+
+
+
+
+
+
 
 
 
@@ -7988,7 +15968,39 @@ def generate_lender_instructions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
 
 
 
@@ -8004,6 +16016,14 @@ def generate_lender_instructions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
 # CA only — the disclosure statement template currently only exists for CA.
 
 
@@ -8012,7 +16032,31 @@ def generate_lender_instructions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -8030,7 +16074,17 @@ def generate_lender_instructions(loan_id):
 
 @app.route("/api/loans/<loan_id>/generate-disclosure", methods=["POST"])
 
+
+
 @require_auth
+
+
+
+
+
+
+
+
 
 
 
@@ -8046,11 +16100,25 @@ def generate_disclosure(loan_id):
 
 
 
+
+
+
+
+
+
+
+
     record = user_loan(loan_id)
+
+
 
     if record is None:
 
+
+
         return jsonify({"error": "Loan not found"}), 404
+
+
 
     fields = record.get("fields") or {}
 
@@ -8060,7 +16128,23 @@ def generate_disclosure(loan_id):
 
 
 
+
+
+
+
+
+
+
+
     context = build_context(fields)
+
+
+
+
+
+
+
+
 
 
 
@@ -8084,6 +16168,22 @@ def generate_disclosure(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     state = (fields.get("STATE") or "FL").strip().upper()
 
 
@@ -8092,7 +16192,23 @@ def generate_disclosure(loan_id):
 
 
 
+
+
+
+
+
+
+
+
     if state not in TEMPLATES_BY_STATE:
+
+
+
+
+
+
+
+
 
 
 
@@ -8116,7 +16232,31 @@ def generate_disclosure(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     doc_key = LENDER_DISCLOSURE_DOC_KEY.get(state)
+
+
+
+
+
+
+
+
 
 
 
@@ -8140,7 +16280,31 @@ def generate_disclosure(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     if not template_file:
+
+
+
+
+
+
+
+
 
 
 
@@ -8156,6 +16320,14 @@ def generate_disclosure(loan_id):
 
 
 
+
+
+
+
+
+
+
+
             "error": f"No lender disclosure template is configured for {state}. "
 
 
@@ -8164,7 +16336,23 @@ def generate_disclosure(loan_id):
 
 
 
+
+
+
+
+
+
+
+
                      f"This document is currently only available for CA loans."
+
+
+
+
+
+
+
+
 
 
 
@@ -8188,7 +16376,31 @@ def generate_disclosure(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     doc = DocxTemplate(str(BASE_DIR / template_file))
+
+
+
+
+
+
+
+
 
 
 
@@ -8212,7 +16424,31 @@ def generate_disclosure(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     doc_buffer = io.BytesIO()
+
+
+
+
+
+
+
+
 
 
 
@@ -8228,7 +16464,31 @@ def generate_disclosure(loan_id):
 
 
 
+
+
+
+
+
+
+
+
     doc_buffer.seek(0)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -8260,7 +16520,31 @@ def generate_disclosure(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     return send_file(
+
+
+
+
+
+
+
+
 
 
 
@@ -8276,7 +16560,23 @@ def generate_disclosure(loan_id):
 
 
 
+
+
+
+
+
+
+
+
         as_attachment=True,
+
+
+
+
+
+
+
+
 
 
 
@@ -8292,7 +16592,23 @@ def generate_disclosure(loan_id):
 
 
 
+
+
+
+
+
+
+
+
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+
+
+
+
+
+
+
+
 
 
 
@@ -8324,7 +16640,39 @@ def generate_disclosure(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
 
 
 
@@ -8340,6 +16688,14 @@ def generate_disclosure(loan_id):
 
 
 
+
+
+
+
+
+
+
+
 # Works for both FL and CA — built directly with python-docx, no template file.
 
 
@@ -8348,7 +16704,31 @@ def generate_disclosure(loan_id):
 
 
 
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -8366,7 +16746,17 @@ def generate_disclosure(loan_id):
 
 @app.route("/api/loans/<loan_id>/generate-key-provisions", methods=["POST"])
 
+
+
 @require_auth
+
+
+
+
+
+
+
+
 
 
 
@@ -8382,11 +16772,25 @@ def generate_key_provisions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
     record = user_loan(loan_id)
+
+
 
     if record is None:
 
+
+
         return jsonify({"error": "Loan not found"}), 404
+
+
 
     fields = record.get("fields") or {}
 
@@ -8396,7 +16800,23 @@ def generate_key_provisions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
     context = build_context(fields)
+
+
+
+
+
+
+
+
 
 
 
@@ -8420,7 +16840,31 @@ def generate_key_provisions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     state = (fields.get("STATE") or "FL").strip().upper()
+
+
+
+
+
+
+
+
 
 
 
@@ -8436,7 +16880,31 @@ def generate_key_provisions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
         state = "FL"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -8468,7 +16936,31 @@ def generate_key_provisions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     doc_buffer = io.BytesIO()
+
+
+
+
+
+
+
+
 
 
 
@@ -8484,7 +16976,31 @@ def generate_key_provisions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
     doc_buffer.seek(0)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -8516,7 +17032,31 @@ def generate_key_provisions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     return send_file(
+
+
+
+
+
+
+
+
 
 
 
@@ -8532,7 +17072,23 @@ def generate_key_provisions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
         as_attachment=True,
+
+
+
+
+
+
+
+
 
 
 
@@ -8548,7 +17104,23 @@ def generate_key_provisions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+
+
+
+
+
+
+
+
 
 
 
@@ -8580,7 +17152,39 @@ def generate_key_provisions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
 
 
 
@@ -8596,7 +17200,31 @@ def generate_key_provisions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
 # =====================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -8620,7 +17248,23 @@ def generate_key_provisions(loan_id):
 
 
 
+
+
+
+
+
+
+
+
 @app.route("/<path:path>")
+
+
+
+
+
+
+
+
 
 
 
@@ -8636,7 +17280,23 @@ def serve_react(path):
 
 
 
+
+
+
+
+
+
+
+
     if path and app.static_folder is not None:
+
+
+
+
+
+
+
+
 
 
 
@@ -8652,7 +17312,23 @@ def serve_react(path):
 
 
 
+
+
+
+
+
+
+
+
             return send_from_directory(app.static_folder, path)
+
+
+
+
+
+
+
+
 
 
 
@@ -8668,7 +17344,23 @@ def serve_react(path):
 
 
 
+
+
+
+
+
+
+
+
             pass
+
+
+
+
+
+
+
+
 
 
 
@@ -8700,6 +17392,30 @@ def serve_react(path):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 if __name__ == "__main__":
 
 
@@ -8708,6 +17424,16 @@ if __name__ == "__main__":
 
 
 
+
+
+
+
+
+
+
+
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")),
+
+
 
             debug=os.environ.get("FLASK_DEBUG") == "1")

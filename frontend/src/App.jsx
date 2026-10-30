@@ -88,6 +88,18 @@ const FIELD_GROUPS = [
     ],
   },
   {
+    name: "California Note (10/30/2026)",
+    states: ["CA"],
+    fields: [
+      ["PREPAYMENT_PENALTY", "Prepayment Penalty (full clause / formula)"],
+      ["PREPAID_NUMBER_MONTHS", "Number of Prepaid Months"],
+      ["PREPAID_PAYMENTS", "Total Prepaid Payments ($)"],
+      ["FIRST_PREPAID", "First Prepaid Period (e.g. November 2026)"],
+      ["LAST_PREPAID", "Last Prepaid Period (e.g. April 2027)"],
+      ["FIRST_PAYMENT_DATE", "First Payment Date to Servicer"],
+    ],
+  },
+  {
     name: "Property",
     fields: [
       ["PROPERTY_ADDRESS", "Property Address (full)"],
@@ -98,9 +110,19 @@ const FIELD_GROUPS = [
       ["APN", "APN (Parcel Number)"],
       ["TITLE_NUMBER", "Title Number"],
       ["TRUSTEE", "Trustee (CA only)"],
+      ["TRUSTEE_ADDRESS", "Trustee Address (CA Deed of Trust)"],
       ["CITY", "Execution City (CA Note header)"],
       ["INTEREST_COMMENCE", "Interest Commencement Date"],
       ["PROPERTY_TYPE", "Property Type"],
+    ],
+  },
+  {
+    name: "California Deed of Trust (10/30/2026)",
+    states: ["CA"],
+    fields: [
+      ["BROKERAGE_NAME", "Brokerage Name (recording and footer)"],
+      ["BROKERAGE_ADDRESS", "Brokerage Street Address"],
+      ["BROKERAGE_CITYSTATEZIP", "Brokerage City, State ZIP"],
     ],
   },
   {
@@ -668,7 +690,7 @@ function LoanWorkspace() {
             </div>
 
             <div className="form-body">
-              {FIELD_GROUPS.map((group) => (
+              {FIELD_GROUPS.filter((group) => !group.states || group.states.includes(fields.STATE)).map((group) => (
                 <fieldset key={group.name}>
                   <legend>{group.name}</legend>
                   <div className="row-list">
