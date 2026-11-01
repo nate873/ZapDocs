@@ -149,6 +149,14 @@ const FIELD_GROUPS = [
     ],
   },
   {
+    name: "California Note — Servicer",
+    states: ["CA"],
+    fields: [
+      ["SERVICER", "Servicer Name (California Note)"],
+      ["SERVICER_ADDRESS", "Servicer Address (California Note)"],
+    ],
+  },
+  {
     name: "Disclosure (CA only)",
     fields: [
       ["LTV", "Loan-to-Value % (e.g. 65%)"],
