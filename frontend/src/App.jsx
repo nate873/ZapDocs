@@ -120,6 +120,8 @@ const FIELD_GROUPS = [
     name: "California Deed of Trust (10/30/2026)",
     states: ["CA"],
     fields: [
+      ["BROKERAGE", "Brokerage (California boiler)"],
+      ["DRE", "California DRE License Number"],
       ["BROKERAGE_NAME", "Brokerage Name (recording and footer)"],
       ["BROKERAGE_ADDRESS", "Brokerage Street Address"],
       ["BROKERAGE_CITYSTATEZIP", "Brokerage City, State ZIP"],
@@ -133,6 +135,7 @@ const FIELD_GROUPS = [
       ["BORROWER_1", "Borrower 1 Name"],
       ["BORROWER_2", "Borrower 2 Name (optional)"],
       ["TAX_ID", "Borrower Tax ID / SSN"],
+      ["TAX_ID_2", "Borrower 2 Tax ID (CA boiler, if applicable)"],
       ["SIGNATURE_FOOTER", "Signer 1 Name"],
       ["SIGNATURE_TITLE", "Signer 1 Title"],
       ["SIGNATURE_FOOTER_2", "Signer 2 Name (optional)"],
