@@ -2673,7 +2673,9 @@ function ZapDocsAuth() {
 
 export default function App() {
   // Public landing page is always the first screen on a fresh visit.
-  const [screen, setScreen] = useState("landing");
+  const [screen, setScreen] = useState(() =>
+    window.location.pathname.replace(/\/$/, "") === "/app" ? "app" : "landing"
+  );
   const [session, setSession] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [setupError, setSetupError] = useState("");
@@ -2700,7 +2702,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const syncLocation = () => setScreen("landing");
+    const syncLocation = () => setScreen(
+      window.location.pathname.replace(/\/$/, "") === "/app" ? "app" : "landing"
+    );
     window.addEventListener("hashchange", syncLocation);
     window.addEventListener("popstate", syncLocation);
     return () => {

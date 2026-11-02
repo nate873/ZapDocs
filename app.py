@@ -3032,6 +3032,8 @@ def generate_key_provisions(loan_id):
 # =====================
 
 
+@app.route("/app", defaults={"path": ""})
+@app.route("/app/", defaults={"path": ""})
 @app.route("/", defaults={"path": ""})
 
 
