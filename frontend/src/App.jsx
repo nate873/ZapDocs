@@ -59,8 +59,11 @@ const FIELD_GROUPS = [
       ["LOAN_NUMBER", "Loan Number"],
       ["LOAN_AMOUNT", "Loan Amount ($)"],
       ["INTEREST_RATE", "Interest Rate (%)"],
-      ["MONTHLY_PAYMENT", "Monthly Payment ($)"],
+      ["MONTHLY_PAYMENT", "Regular Monthly Interest Payment ($)"],
       ["NUMBER_OF_PAYMENTS", "Number of Payments (Note table)"],
+      ["NEG_AM_MONTHS", "Reduced-payment months (for deferred interest)"],
+      ["NEG_AM_PAYMENT_RATE", "Reduced payment rate (%) (e.g. 6)"],
+      ["DEFERRED_INTEREST", "Deferred interest override ($; optional)"],
       ["LOAN_TERM", "Loan Term (e.g. 36 months)"],
       ["BALLOON_PAYMENT", "Balloon Payment ($)"],
       ["COMMISSION", "Commission ($)"],
@@ -191,6 +194,9 @@ function emptyFields() {
   const obj = {};
   ALL_FIELDS.forEach((name) => (obj[name] = ""));
   obj.STATE = "FL";
+  obj.PAYMENT_STRUCTURE = "interest_only";
+  obj.NEG_AM_MONTHS = "6";
+  obj.NEG_AM_PAYMENT_RATE = "6";
   obj.PAYMENT_ROWS = [emptyPaymentRow()];
   return obj;
 }
@@ -227,49 +233,83 @@ function formatMoney(value) {
 }
 function simulateSchedule(fields) {
   const principal = numberValue(fields.LOAN_AMOUNT);
+  const contractualRate = numberValue(fields.INTEREST_RATE);
   const first = dateValue(fields.FIRST_PAYMENT) || dateValue(fields.FIRST_PAYMENT_DATE) || dateValue(fields.FIRST_PAYMENT_DUE);
   const rows = Array.isArray(fields.PAYMENT_ROWS) ? fields.PAYMENT_ROWS : [];
-  if (!(principal > 0) || !first) return { valid: false, message: "Enter a valid Loan Amount and First Payment Date to see the schedule preview.", rows: [], installments: [] };
-  let balance = principal, monthOffset = 0;
+  const structure = fields.PAYMENT_STRUCTURE || "interest_only";
+  if (!(principal > 0) || !(contractualRate >= 0) || contractualRate > 100 || !first) {
+    return { valid: false, message: "Enter a valid Loan Amount, contractual Interest Rate and First Payment Date.", rows: [], installments: [] };
+  }
+  const cents = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
+  const monthlyInterest = cents(principal * contractualRate / 1200);
   const installments = [], derivedRows = [], warnings = [];
+  let monthOffset = 0, deferredInterest = 0;
   for (let i = 0; i < rows.length; i++) {
-    const row = rows[i], count = numberValue(row.COUNT);
-    const rate = String(row.RATE ?? "").trim() === "" ? numberValue(fields.INTEREST_RATE) : numberValue(row.RATE);
-    if (!Number.isInteger(count) || count < 1 || count > 600 || !(rate >= 0) || rate > 100) {
-      return { valid: false, message: `Row ${i + 1}: enter a valid payment count (1–600) and annual interest rate (0–100%).`, rows: [], installments: [] };
+    const row = rows[i];
+    if (!Object.values(row || {}).some((v) => String(v ?? "").trim())) continue;
+    const count = numberValue(row.COUNT);
+    const paymentRate = String(row.RATE ?? "").trim() === "" ? contractualRate : numberValue(row.RATE);
+    if (!Number.isInteger(count) || count < 1 || count > 600 || !(paymentRate >= 0) || paymentRate > 100) {
+      return { valid: false, message: `Row ${i + 1}: enter valid payment count and rate.`, rows: [], installments: [] };
     }
     const start = dateValue(row.START) || nextMonth(first, monthOffset);
+    if (!start) return { valid: false, message: `Row ${i + 1}: invalid starting date.`, rows: [], installments: [] };
     const description = String(row.DESCRIPTION || "").trim() || `Monthly Beginning ${formatDate(start)}`;
     const manual = String(row.AMOUNT ?? "").trim() !== "";
     const override = manual ? numberValue(row.AMOUNT) : NaN;
     if (manual && (!Number.isFinite(override) || override < 0)) {
-      return { valid: false, message: `Row ${i + 1}: payment override must be a nonnegative number.`, rows: [], installments: [] };
+      return { valid: false, message: `Row ${i + 1}: payment must be nonnegative.`, rows: [], installments: [] };
     }
-    const startBalance = balance;
-    // In an auto-filled row, use interest-only computed at the tier's starting
-    // outstanding principal; manual AMOUNT always takes precedence.
-    const tierPayment = manual ? override : Math.round(startBalance * rate / 1200 * 100) / 100;
+    const tierPayment = manual ? cents(override) : cents(principal * paymentRate / 1200);
+    // A legacy last row may contain the balloon as its AMOUNT. Show it separately,
+    // rather than treating its payoff amount as a monthly installment.
+    const isBalloon = /balloon|payoff|maturity/i.test(description) ||
+      (count === 1 && manual && tierPayment >= principal * 0.5);
+    if (isBalloon) {
+      if (count !== 1) warnings.push(`Row ${i + 1}: a balloon row should have a count of 1.`);
+      derivedRows.push({ ...row, COUNT: String(count), START: formatDate(start), DESCRIPTION: description,
+        RATE: String(paymentRate), AMOUNT: tierPayment.toFixed(2) });
+      continue;
+    }
     for (let k = 0; k < count; k++) {
       const paymentDate = nextMonth(start, k);
-      const interest = Math.round(balance * rate / 1200 * 100) / 100;
-      const applied = tierPayment;
-      const updated = Math.round((balance + interest - applied) * 100) / 100;
-      if (updated < -0.01) warnings.push(`Payment ${installments.length + 1} exceeds the outstanding payoff; check balloon/final payment.`);
-      balance = Math.max(0, updated);
-      installments.push({ number: installments.length + 1, date: formatDate(paymentDate), rate, interest, payment: applied, balance, negativeAm: applied < interest - 0.005 });
+      const shortfall = cents(Math.max(0, monthlyInterest - tierPayment));
+      if (structure === "neg_am") deferredInterest = cents(deferredInterest + shortfall);
+      else if (shortfall > 0.005) warnings.push(`Payment ${installments.length + 1} is ${formatMoney(shortfall)} below contractual interest; choose Deferred Interest or correct the schedule.`);
+      if (tierPayment > monthlyInterest + 0.005) warnings.push(`Payment ${installments.length + 1} exceeds interest; no principal reduction is assumed. Confirm how the excess is applied.`);
+      installments.push({ number: installments.length + 1, date: formatDate(paymentDate),
+        rate: paymentRate, interest: monthlyInterest, payment: tierPayment, balance: principal,
+        deferred: structure === "neg_am" ? shortfall : 0, negativeAm: structure === "neg_am" && shortfall > 0.005 });
     }
-    derivedRows.push({ ...row, COUNT: String(count), START: formatDate(start), DESCRIPTION: description, RATE: String(rate), AMOUNT: String(tierPayment.toFixed(2)) });
+    derivedRows.push({ ...row, COUNT: String(count), START: formatDate(start), DESCRIPTION: description,
+      RATE: String(paymentRate), AMOUNT: tierPayment.toFixed(2) });
     monthOffset += count;
-    if (monthOffset > 600) return { valid: false, message: "The schedule exceeds 600 payments.", rows: [], installments: [] };
+    if (monthOffset > 600) return { valid: false, message: "Schedule exceeds 600 installments.", rows: [], installments: [] };
+  }
+  const explicitDeferred = String(fields.DEFERRED_INTEREST ?? "").trim();
+  if (structure === "neg_am" && explicitDeferred) {
+    const override = numberValue(explicitDeferred);
+    if (!Number.isFinite(override) || override < 0) {
+      return { valid: false, message: "Deferred interest override must be a nonnegative number.", rows: [], installments: [] };
+    }
+    deferredInterest = cents(override);
   }
   const maturity = dateValue(fields.MATURITY_DATE);
   const lastDate = installments.length ? dateValue(installments[installments.length - 1].date) : null;
-  if (maturity && lastDate && lastDate > maturity) warnings.push("Payments extend beyond the entered maturity date.");
-  if (Number.isFinite(numberValue(fields.BALLOON_PAYMENT)) && String(fields.BALLOON_PAYMENT).trim() !== "") {
-    const balloon = numberValue(fields.BALLOON_PAYMENT);
-    if (Math.abs(balloon - balance) > 1) warnings.push("The entered balloon differs from the remaining balance. Confirm whether the balloon includes interest, fees, or a separate final payment.");
+  if (maturity && lastDate && lastDate > maturity) warnings.push("Scheduled installments extend beyond the maturity date.");
+  const balloonRaw = String(fields.BALLOON_PAYMENT ?? "").trim();
+  const balloon = balloonRaw ? numberValue(balloonRaw) : NaN;
+  if (balloonRaw && (!Number.isFinite(balloon) || balloon < 0)) warnings.push("Invalid balloon payment amount.");
+  const additionalBalloon = Number.isFinite(balloon) ? cents(balloon - principal) : NaN;
+  if (Number.isFinite(additionalBalloon) && additionalBalloon < -0.01) warnings.push("Balloon is below original principal, but the schedule contains no principal reductions.");
+  if (structure === "neg_am" && Number.isFinite(additionalBalloon) && Math.abs(additionalBalloon - deferredInterest) > 0.01) {
+    warnings.push(`Deferred interest is ${formatMoney(deferredInterest)}; stated balloon exceeds principal by ${formatMoney(additionalBalloon)}. Reconcile the difference in the Note (fees, waiver, separate payoff or other charges).`);
   }
-  return { valid: true, rows: derivedRows, installments, endingBalance: balance, warnings };
+  if (structure !== "neg_am" && Number.isFinite(additionalBalloon) && additionalBalloon > 0.01) {
+    warnings.push(`Balloon includes ${formatMoney(additionalBalloon)} above principal. Confirm what this amount represents.`);
+  }
+  return { valid: true, rows: derivedRows, installments, endingBalance: principal, deferredInterest,
+    balloon, warnings: [...new Set(warnings)] };
 }
 const PROFILE_CATEGORIES = [
   { key: "trustee", label: "Trustee", fields: ["TRUSTEE", "TRUSTEE_ADDRESS"] },
@@ -346,16 +386,36 @@ function LoanWorkspace() {
     const principal = numberValue(fields.LOAN_AMOUNT), rate = numberValue(fields.INTEREST_RATE);
     const first = dateValue(fields.FIRST_PAYMENT) || dateValue(fields.FIRST_PAYMENT_DATE) || dateValue(fields.FIRST_PAYMENT_DUE);
     if (!(principal > 0) || !(rate >= 0) || !first) {
-      setWorkspaceError("Enter Loan Amount, Interest Rate and First Payment Date before auto-filling."); return;
+      setWorkspaceError("Enter Loan Amount, contractual Interest Rate and First Payment Date before auto-filling."); return;
     }
     const maturity = dateValue(fields.MATURITY_DATE);
     const statedTerm = String(fields.LOAN_TERM || "").match(/^(\d+)\s*(?:months?|mos?)?$/i);
-    const monthCount = statedTerm ? +statedTerm[1] : (maturity ? (maturity.getUTCFullYear() - first.getUTCFullYear()) * 12 + maturity.getUTCMonth() - first.getUTCMonth() + (maturity.getUTCDate() >= first.getUTCDate() ? 1 : 0) : NaN);
+    const monthCount = statedTerm ? +statedTerm[1] : (maturity ?
+      (maturity.getUTCFullYear() - first.getUTCFullYear()) * 12 + maturity.getUTCMonth() - first.getUTCMonth() +
+      (maturity.getUTCDate() >= first.getUTCDate() ? 1 : 0) : NaN);
     if (!Number.isInteger(monthCount) || monthCount < 1 || monthCount > 600) {
-      setWorkspaceError("Enter a valid Loan Term in months (e.g. 12 months) or Maturity Date."); return;
+      setWorkspaceError("Enter a valid loan term in months or Maturity Date."); return;
     }
-    if (paymentRows.some((row) => Object.values(row).some((v) => String(v || "").trim())) && !window.confirm("Replace the current payment schedule with an interest-only draft?")) return;
-    setFields((prev) => ({ ...prev, NUMBER_OF_PAYMENTS: String(monthCount), PAYMENT_ROWS: [{ COUNT: String(monthCount), START: formatDate(first), DESCRIPTION: "", RATE: String(rate), AMOUNT: "" }] }));
+    if (paymentRows.some((row) => Object.values(row).some((v) => String(v || "").trim())) &&
+        !window.confirm("Replace the current payment schedule with a new interest-only draft?")) return;
+    const structure = fields.PAYMENT_STRUCTURE || "interest_only";
+    const newRows = [];
+    if (structure === "neg_am") {
+      const reducedMonths = numberValue(fields.NEG_AM_MONTHS);
+      const reducedRate = numberValue(fields.NEG_AM_PAYMENT_RATE);
+      if (!Number.isInteger(reducedMonths) || reducedMonths < 1 || reducedMonths >= monthCount ||
+          !(reducedRate >= 0) || reducedRate > rate) {
+        setWorkspaceError("Reduced months must be between 1 and the loan's installment count minus 1; reduced payment rate must be 0 through the contractual rate."); return;
+      }
+      newRows.push({ COUNT: String(reducedMonths), START: formatDate(first), DESCRIPTION: "",
+        RATE: String(reducedRate), AMOUNT: (Math.round(principal * reducedRate / 12) / 100).toFixed(2) });
+      newRows.push({ COUNT: String(monthCount - reducedMonths), START: formatDate(nextMonth(first, reducedMonths)), DESCRIPTION: "",
+        RATE: String(rate), AMOUNT: (Math.round(principal * rate / 12) / 100).toFixed(2) });
+    } else {
+      newRows.push({ COUNT: String(monthCount), START: formatDate(first), DESCRIPTION: "", RATE: String(rate),
+        AMOUNT: (Math.round(principal * rate / 12) / 100).toFixed(2) });
+    }
+    setFields((prev) => ({ ...prev, NUMBER_OF_PAYMENTS: String(monthCount), PAYMENT_ROWS: newRows }));
     setWorkspaceError("");
   }
 
@@ -392,6 +452,9 @@ function LoanWorkspace() {
       return;
     }
     const incoming = { ...emptyFields(), ...data.fields };
+    if (!data.fields?.PAYMENT_STRUCTURE) {
+      incoming.PAYMENT_STRUCTURE = (data.fields?.PREPAID_NUMBER_MONTHS || data.fields?.PREPAID_PAYMENTS) ? "prepaid" : "interest_only";
+    }
     // A loan saved before the payments table existed comes back with an empty
     // list — show one blank row so there's something to type into.
     if (!Array.isArray(incoming.PAYMENT_ROWS) || incoming.PAYMENT_ROWS.length === 0) {
@@ -905,10 +968,27 @@ function LoanWorkspace() {
               </fieldset>
 
               <fieldset>
+                <legend>Loan Payment Structure</legend>
+                <p className="pay-note">Choose the Note clause and the way payments are shown. Principal stays unchanged for these interest-only structures; deferred interest is tracked separately.</p>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                  {[ ["interest_only", "Standard interest-only"], ["prepaid", "Prepaid interest"], ["neg_am", "Deferred interest / negative amortization"] ].map(([value, label]) => (
+                    <label key={value} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                      <input type="radio" name="PAYMENT_STRUCTURE" checked={(fields.PAYMENT_STRUCTURE || "interest_only") === value} onChange={() => handleChange("PAYMENT_STRUCTURE", value)} /> {label}
+                    </label>
+                  ))}
+                </div>
+                {fields.PAYMENT_STRUCTURE === "neg_am" && (
+                  <p className="pay-note" style={{ marginTop: 12 }}>For six reduced payments at 6% on a 12% contractual loan, set reduced-payment months to 6 and reduced-payment rate to 6 above, then choose Auto-fill. The unpaid interest will be shown separately and not added to principal.</p>
+                )}
+                {fields.PAYMENT_STRUCTURE === "prepaid" && (
+                  <p className="pay-note" style={{ marginTop: 12 }}>Complete the prepaid-month and amount fields under the California Note or Florida Prepayment sections. The generated Note uses the prepaid clause.</p>
+                )}
+              </fieldset>
+              <fieldset>
                 <legend>Payment Schedule (Note, Sec. 3)</legend>
-                <p className="pay-note">Build a schedule automatically from the loan terms, then adjust each tier. Annual RATE is not the payment: if a payment is smaller than the interest accrued, the unpaid interest increases principal (negative amortization). Leave PAYMENT empty for an automatically calculated interest-only amount; enter an amount to override it. Generated Word documents use the displayed amounts.</p>
+                <p className="pay-note">RATE is the annual payment-rate equivalent for that tier; contractual interest is calculated separately using the loan's Interest Rate. Leave PAYMENT blank to calculate from tier RATE, or enter an exact payment. No principal is repaid by these installments. A balloon row is displayed separately from monthly payments.</p>
                 <button type="button" className="add-row-btn" onClick={autoFillSchedule} style={{ marginTop: 0, marginBottom: 14 }}>Auto-fill schedule from loan terms</button>
-                <p className="pay-note">For a 6% rate during the first 6 months, set # of Payments to 6 and Rate to 6. Add another row for the next period. To model negative amortization, enter a payment below the interest due.</p>
+                <p className="pay-note">Example: loan contract rate 12%, payment rate 6% for the first six months = $1,700/month on $340,000. Thereafter payment rate 12% = $3,400/month. The $1,700 shortfall accrues as deferred interest only when deferred-interest mode is selected.</p>
 
                 <div className="pay-grid">
                   <div className="pay-row pay-head">
@@ -1008,18 +1088,18 @@ function LoanWorkspace() {
                 <div style={{ marginTop: 20, background: "#f8faff", border: "1px solid #d9e2f3", padding: 14, borderRadius: 10 }}>
                   <strong>Live payment preview</strong>
                   {!schedule.valid ? <p className="pay-note">{schedule.message}</p> : <>
-                    <p className="pay-note" style={{ marginTop: 8 }}>{schedule.installments.length} payments · Remaining principal after schedule: <strong>{formatMoney(schedule.endingBalance)}</strong></p>
+                    <p className="pay-note" style={{ marginTop: 8 }}>{schedule.installments.length} interest-only installments · Principal at maturity: <strong>{formatMoney(schedule.endingBalance)}</strong> · Deferred interest: <strong>{formatMoney(schedule.deferredInterest)}</strong> · Entered balloon: <strong>{formatMoney(schedule.balloon)}</strong></p>
                     <div style={{ maxHeight: 290, overflow: "auto" }}>
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                         <thead><tr>{["#", "Date", "Rate", "Interest", "Payment", "Balance", "Type"].map((title) => <th key={title} style={{ textAlign: "left", padding: 6, borderBottom: "1px solid #d6dbe4" }}>{title}</th>)}</tr></thead>
                         <tbody>{schedule.installments.map((item) => <tr key={item.number}>
                           <td style={{ padding: 5 }}>{item.number}</td><td>{item.date}</td><td>{item.rate}%</td><td>{formatMoney(item.interest)}</td><td>{formatMoney(item.payment)}</td><td>{formatMoney(item.balance)}</td>
-                          <td style={{ color: item.negativeAm ? "#a33919" : "#2b6650" }}>{item.negativeAm ? "Neg. amortization" : "No neg. am."}</td>
+                          <td style={{ color: item.negativeAm ? "#a33919" : "#2b6650" }}>{item.negativeAm ? `Deferred ${formatMoney(item.deferred)}` : "Interest only"}</td>
                         </tr>)}</tbody>
                       </table>
                     </div>
                     {schedule.warnings?.map((w, i) => <p key={i} style={{ color: "#a33919", fontSize: 12 }}>{w}</p>)}
-                    <p className="pay-note">Preview uses monthly interest = outstanding principal × annual rate ÷ 12, with monthly rounding. It does not model daily accrual, irregular periods, fees, or contractual compounding conventions. Confirm figures and loan terms before signing.</p>
+                    <p className="pay-note">Preview uses simple monthly contractual interest = original principal × annual Note rate ÷ 12. It never applies regular payments toward principal or capitalizes unpaid interest. It does not model daily accrual, irregular periods, fees or compounding; confirm final payoff and Note language before signing.</p>
                   </>}
                 </div>
               </fieldset>

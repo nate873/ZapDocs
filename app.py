@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 from datetime import datetime
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from flask import Flask, request, send_file, send_from_directory, jsonify, g
 
@@ -255,8 +256,11 @@ ALL_FIELDS = [
     "SIGNATURE_FOOTER_2", "SIGNATURE_TITLE_2",
 
     "LENDER", "LENDER_NAME", "LENDER_ADDRESS", "LENDER_OWNERSHIP",
+
     "BROKERAGE", "DRE", "TAX_ID_2",
+
     "BROKERAGE_NAME", "BROKERAGE_ADDRESS", "BROKERAGE_CITYSTATEZIP", "TRUSTEE_ADDRESS",
+
     "SERVICER", "SERVICER_ADDRESS",
 
     # Lender Disclosure (CA) fields
@@ -272,8 +276,11 @@ ALL_FIELDS = [
     "PREPAID_PAYMENTS", "FIRST_PREPAID_MONTH", "LAST_PREPAID_MONTH",
 
     "FIRST_PAYMENT_DUE",
+
     # California Note (October 30, 2026)
+
     "PREPAYMENT_PENALTY", "PREPAID_NUMBER_MONTHS",
+
     "FIRST_PREPAID", "LAST_PREPAID", "FIRST_PAYMENT_DATE",
 
     # Key Provisions Summary (FL + CA) — fields that don't already exist
@@ -281,6 +288,8 @@ ALL_FIELDS = [
     # elsewhere in the package but are needed for the one-page cover sheet.
 
     "GUARANTOR", "GUARANTOR_RECOURSE", "IMPOUNDS", "PREPAYMENT_PREMIUM",
+    # Interest-only schedule / California Note conditional language
+    "PAYMENT_STRUCTURE", "DEFERRED_INTEREST",
 
 ]
 
@@ -407,6 +416,7 @@ def empty_fields():
     fields = {name: "" for name in ALL_FIELDS}
 
     fields["STATE"] = "FL"  # sensible default; user can switch to CA
+    fields["PAYMENT_STRUCTURE"] = "interest_only"
 
     fields["PAYMENT_ROWS"] = []
 
@@ -618,7 +628,7 @@ def safe_filename_part(value, fallback="file"):
 
     value = str(value or "").strip()
 
-    value = re.sub(r'[<>:"/**\\\\\\****|?*]+', "_", value)
+    value = re.sub(r'[<>:"/\\|?*]+', "_", value)
 
     value = re.sub(r"\s+", "_", value).strip(" ._")
 
@@ -658,9 +668,9 @@ def find_libreoffice_executable():
 
     candidates.extend([
 
-        r"C:**\P****rogram Files**\L****ibreOffice**\p****rogram\soffice.exe",
+        r"C:****\P******rogram Files****\L******ibreOffice****\p******rogram\soffice.exe",
 
-        r"C:**\P****rogram Files (x86)**\L****ibreOffice**\p****rogram\soffice.exe",
+        r"C:****\P******rogram Files (x86)****\L******ibreOffice****\p******rogram\soffice.exe",
 
         "/Applications/LibreOffice.app/Contents/MacOS/soffice",
 
@@ -1068,6 +1078,58 @@ def convert_docx_to_pdf(docx_path, output_dir):
 
     )
 
+def _decimal_amount(raw, default=None):
+    try:
+        return Decimal(str(raw or "").replace("$", "").replace(",", "").replace("%", "").strip())
+    except (InvalidOperation, ValueError):
+        return default
+
+
+def payment_structure_for(fields):
+    """Old loans with prepayment data keep their existing prepaid clause."""
+    value = str(fields.get("PAYMENT_STRUCTURE") or "").lower().strip().replace("-", "_")
+    aliases = {"prepaid_interest": "prepaid", "negative_amortization": "neg_am",
+               "deferred_interest": "neg_am", "standard": "interest_only"}
+    value = aliases.get(value, value)
+    if not value:
+        value = "prepaid" if any(str(fields.get(k) or "").strip() for k in
+              ("PREPAID_NUMBER_MONTHS", "PREPAID_PAYMENTS", "FIRST_PREPAID")) else "interest_only"
+    if value not in ("interest_only", "prepaid", "neg_am"):
+        raise ValueError("PAYMENT_STRUCTURE must be interest_only, prepaid, or neg_am")
+    return value
+
+
+def deferred_interest_for(fields):
+    """For reduced-payment periods, accrue unpaid simple monthly interest separately.
+
+    No unpaid interest is added to principal. Uses the Note's annual rate and
+    the explicit payment rows (COUNT, AMOUNT), excluding any balloon row.
+    An entered DEFERRED_INTEREST overrides this estimate for unusual loan terms.
+    """
+    explicit = _decimal_amount(fields.get("DEFERRED_INTEREST"))
+    if explicit is not None:
+        if explicit < 0:
+            raise ValueError("Deferred interest cannot be negative")
+        return explicit.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    principal = _decimal_amount(fields.get("LOAN_AMOUNT"))
+    rate = _decimal_amount(fields.get("INTEREST_RATE"))
+    if principal is None or rate is None:
+        return Decimal("0.00")
+    monthly_interest = (principal * rate / Decimal("1200"))
+    deferred = Decimal("0")
+    for row in clean_payment_rows(fields.get("PAYMENT_ROWS")):
+        try:
+            count = int(str(row.get("COUNT") or "").strip())
+        except ValueError:
+            continue
+        amount = _decimal_amount(row.get("AMOUNT"))
+        description = str(row.get("DESCRIPTION") or "").lower()
+        if amount is None or count < 1 or "balloon" in description or "payoff" in description:
+            continue
+        deferred += max(Decimal("0"), monthly_interest - amount) * count
+    return deferred.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 def build_context(fields):
 
     context = {}
@@ -1147,6 +1209,17 @@ def build_context(fields):
     payment_rows = build_payment_rows(fields)
 
     context["PAYMENT_ROWS"] = payment_rows
+    structure = payment_structure_for(fields)
+    context["PAYMENT_STRUCTURE"] = structure
+    context["IS_PREPAID"] = structure == "prepaid"
+    context["IS_NEG_AM"] = structure == "neg_am"
+    context["IS_INTEREST_ONLY"] = structure == "interest_only"
+    context["DEFERRED_INTEREST"] = (
+        f"{deferred_interest_for(fields):,.2f}" if structure == "neg_am" else "0.00"
+    )
+    # The scheduled principal is unchanged for all three interest-only modes.
+    context["BALLOON_PRINCIPAL"] = context.get("LOAN_AMOUNT", "")
+    # BALLOON_PAYMENT is deliberately user-entered, never silently recalculated.
 
     # Handy for body text that references the schedule as a whole.
 
@@ -1172,7 +1245,8 @@ def build_context(fields):
 
     # The CA Boiler package uses FIRST_PAYMENT_DATE where other docs use FIRST_PAYMENT
 
-    context["FIRST_PAYMENT_DATE"] = context.get("FIRST_PAYMENT", "")
+    context["FIRST_PAYMENT_DATE"] = (context.get("FIRST_PAYMENT_DATE")
+        or context.get("FIRST_PAYMENT_DUE") or context.get("FIRST_PAYMENT", ""))
 
     # The CA Note's payments table has {{MONTLY_PAYMENT}} misspelled in the
 
@@ -1181,15 +1255,25 @@ def build_context(fields):
     # tag in Word. Fix the template when convenient and this can go away.
 
     context["MONTLY_PAYMENT"] = context.get("MONTHLY_PAYMENT", "")
+
     # New CA Note fields. Prefer explicit values; preserve existing saved loan defaults.
+
     context["FIRST_PAYMENT_DATE"] = (context.get("FIRST_PAYMENT_DATE")
+
         or context.get("FIRST_PAYMENT_DUE") or context.get("FIRST_PAYMENT", ""))
+
     context["FIRST_PREPAID"] = (context.get("FIRST_PREPAID")
+
         or context.get("FIRST_PREPAID_MONTH", ""))
+
     context["LAST_PREPAID"] = (context.get("LAST_PREPAID")
+
         or context.get("LAST_PREPAID_MONTH", ""))
+
     context["PREPAYMENT_PENALTY"] = (context.get("PREPAYMENT_PENALTY")
+
         or context.get("PREPAYMENT_PREMIUM", ""))
+
     # Deed of Trust new brokerage/trustee address placeholders are direct fields.
 
     # The CA Servicing Agreement uses SERVICING_DATE for its dateline; fall back
@@ -1302,7 +1386,7 @@ def _kp_payments_line(fields):
 
         return ""
 
-    return f"{n} months amortized over {n} months"
+    return f"{n} scheduled payments (interest only)"
 
 def key_provisions_rows(fields, context, state):
 
@@ -1330,10 +1414,12 @@ def key_provisions_rows(fields, context, state):
 
         ("Interest Rate:", percent(fields.get("INTEREST_RATE", ""))),
 
-        ("Number of Principal and Interest Payments:", _kp_payments_line(fields)),
+        ("Number of Scheduled Payments:", _kp_payments_line(fields)),
 
-        ("Principal and Interest Monthly Payment Amount:", money(fields.get("MONTHLY_PAYMENT", ""))),
+        ("Interest-Only Monthly Payment Amount:", money(fields.get("MONTHLY_PAYMENT", ""))),
 
+        ("Payment Structure:", payment_structure_for(fields).replace("_", " ").title()),
+        ("Deferred Interest (if applicable):", money(context.get("DEFERRED_INTEREST", "")) if context.get("IS_NEG_AM") else ""),
         ("Impounds:", str(fields.get("IMPOUNDS", "") or "").strip()),
 
         ("Maturity Date:", context.get("MATURITY_DATE", "")),
@@ -1659,62 +1745,107 @@ def delete_loan(loan_id):
 # =====================
 
 @app.route("/api/loans/<loan_id>/generate", methods=["POST"])
+
 @require_auth
+
 def generate(loan_id):
+
     """Download individually rendered Word documents as a ZIP, without PDFs or merging.
 
     CA: Note, Deed of Trust, Boiler, Oral Disclosure only.
+
     FL: keep the configured Florida templates, but output DOCX files only.
+
     Servicing Agreement and Lender Disclosure remain on their separate endpoints.
+
     """
+
     record = user_loan(loan_id)
+
     if record is None:
+
         return jsonify({"error": "Loan not found"}), 404
 
     fields = record.get("fields") or {}
+
     context = build_context(fields)
+
     loan_number = context.get("LOAN_NUMBER") or "loan"
+
     state = (fields.get("STATE") or "FL").strip().upper()
+
     if state not in TEMPLATES_BY_STATE:
+
         state = "FL"
 
     if state == "CA":
+
         document_keys = ("Note", "Deed of Trust", "Boiler", "Oral Disclosure")
+
         templates_to_render = {
+
             key: TEMPLATES_BY_STATE["CA"][key] for key in document_keys
+
         }
+
     else:
+
         # Preserve the existing Florida document selection (plus Full Set).
+
         templates_to_render = {**TEMPLATES_BY_STATE["FL"], **COMMON_TEMPLATES}
 
     safe_loan_number = safe_filename_part(loan_number, "loan")
+
     zip_buffer = io.BytesIO()
+
     try:
+
         with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+
             for doc_label, template_file in templates_to_render.items():
+
                 template_path = BASE_DIR / template_file
+
                 if not template_path.is_file():
+
                     return jsonify({"error": f"Template file not found: {template_file}"}), 500
 
                 document = DocxTemplate(str(template_path))
+
                 document.render(context)
+
                 docx_buffer = io.BytesIO()
+
                 document.save(docx_buffer)
+
                 filename = f"{safe_filename_part(doc_label, 'Document')}_Loan_{safe_loan_number}.docx"
+
                 zf.writestr(filename, docx_buffer.getvalue())
 
         zip_buffer.seek(0)
+
         return send_file(
+
             zip_buffer,
+
             as_attachment=True,
+
             download_name=f"Loan_{safe_loan_number}_Documents.zip",
+
             mimetype="application/zip",
+
         )
+
     except Exception as exc:
+
         app.logger.exception("Word document package generation failed")
+
         return jsonify({
+
             "error": "Could not generate the Word document package.",
+
             "details": str(exc),
+
         }), 500
 
 # The servicing agreement and lender disclosure use their existing separate buttons.
@@ -1910,7 +2041,9 @@ def generate_key_provisions(loan_id):
 # =====================
 
 @app.route("/app", defaults={"path": ""})
+
 @app.route("/app/", defaults={"path": ""})
+
 @app.route("/", defaults={"path": ""})
 
 @app.route("/<path:path>")
