@@ -195,6 +195,90 @@ function emptyFields() {
   return obj;
 }
 
+// Payment schedule helpers. Monetary calculations use cents for display; validate final
+// legal/payment figures independently before executing a loan.
+function numberValue(value) {
+  const n = Number(String(value ?? "").replace(/[$,%\s]/g, ""));
+  return Number.isFinite(n) ? n : NaN;
+}
+function dateValue(value) {
+  const str = String(value ?? "").trim();
+  if (!str) return null;
+  const m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) {
+    const d = new Date(Date.UTC(+m[3], +m[1] - 1, +m[2]));
+    return d.getUTCFullYear() === +m[3] && d.getUTCMonth() === +m[1] - 1 && d.getUTCDate() === +m[2] ? d : null;
+  }
+  const d = new Date(str);
+  return Number.isNaN(d.getTime()) ? null : new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+}
+function nextMonth(date, increment) {
+  if (!date) return null;
+  const y = date.getUTCFullYear(), m = date.getUTCMonth(), day = date.getUTCDate();
+  const monthStart = new Date(Date.UTC(y, m + increment, 1));
+  const maxDay = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth(), Math.min(day, maxDay)));
+}
+function formatDate(date) {
+  return date ? `${String(date.getUTCMonth() + 1).padStart(2, "0")}/${String(date.getUTCDate()).padStart(2, "0")}/${date.getUTCFullYear()}` : "";
+}
+function formatMoney(value) {
+  return Number.isFinite(value) ? value.toLocaleString("en-US", { style: "currency", currency: "USD" }) : "—";
+}
+function simulateSchedule(fields) {
+  const principal = numberValue(fields.LOAN_AMOUNT);
+  const first = dateValue(fields.FIRST_PAYMENT) || dateValue(fields.FIRST_PAYMENT_DATE) || dateValue(fields.FIRST_PAYMENT_DUE);
+  const rows = Array.isArray(fields.PAYMENT_ROWS) ? fields.PAYMENT_ROWS : [];
+  if (!(principal > 0) || !first) return { valid: false, message: "Enter a valid Loan Amount and First Payment Date to see the schedule preview.", rows: [], installments: [] };
+  let balance = principal, monthOffset = 0;
+  const installments = [], derivedRows = [], warnings = [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i], count = numberValue(row.COUNT);
+    const rate = String(row.RATE ?? "").trim() === "" ? numberValue(fields.INTEREST_RATE) : numberValue(row.RATE);
+    if (!Number.isInteger(count) || count < 1 || count > 600 || !(rate >= 0) || rate > 100) {
+      return { valid: false, message: `Row ${i + 1}: enter a valid payment count (1–600) and annual interest rate (0–100%).`, rows: [], installments: [] };
+    }
+    const start = dateValue(row.START) || nextMonth(first, monthOffset);
+    const description = String(row.DESCRIPTION || "").trim() || `Monthly Beginning ${formatDate(start)}`;
+    const manual = String(row.AMOUNT ?? "").trim() !== "";
+    const override = manual ? numberValue(row.AMOUNT) : NaN;
+    if (manual && (!Number.isFinite(override) || override < 0)) {
+      return { valid: false, message: `Row ${i + 1}: payment override must be a nonnegative number.`, rows: [], installments: [] };
+    }
+    const startBalance = balance;
+    // In an auto-filled row, use interest-only computed at the tier's starting
+    // outstanding principal; manual AMOUNT always takes precedence.
+    const tierPayment = manual ? override : Math.round(startBalance * rate / 1200 * 100) / 100;
+    for (let k = 0; k < count; k++) {
+      const paymentDate = nextMonth(start, k);
+      const interest = Math.round(balance * rate / 1200 * 100) / 100;
+      const applied = tierPayment;
+      const updated = Math.round((balance + interest - applied) * 100) / 100;
+      if (updated < -0.01) warnings.push(`Payment ${installments.length + 1} exceeds the outstanding payoff; check balloon/final payment.`);
+      balance = Math.max(0, updated);
+      installments.push({ number: installments.length + 1, date: formatDate(paymentDate), rate, interest, payment: applied, balance, negativeAm: applied < interest - 0.005 });
+    }
+    derivedRows.push({ ...row, COUNT: String(count), START: formatDate(start), DESCRIPTION: description, RATE: String(rate), AMOUNT: String(tierPayment.toFixed(2)) });
+    monthOffset += count;
+    if (monthOffset > 600) return { valid: false, message: "The schedule exceeds 600 payments.", rows: [], installments: [] };
+  }
+  const maturity = dateValue(fields.MATURITY_DATE);
+  const lastDate = installments.length ? dateValue(installments[installments.length - 1].date) : null;
+  if (maturity && lastDate && lastDate > maturity) warnings.push("Payments extend beyond the entered maturity date.");
+  if (Number.isFinite(numberValue(fields.BALLOON_PAYMENT)) && String(fields.BALLOON_PAYMENT).trim() !== "") {
+    const balloon = numberValue(fields.BALLOON_PAYMENT);
+    if (Math.abs(balloon - balance) > 1) warnings.push("The entered balloon differs from the remaining balance. Confirm whether the balloon includes interest, fees, or a separate final payment.");
+  }
+  return { valid: true, rows: derivedRows, installments, endingBalance: balance, warnings };
+}
+const PROFILE_CATEGORIES = [
+  { key: "trustee", label: "Trustee", fields: ["TRUSTEE", "TRUSTEE_ADDRESS"] },
+  { key: "lender", label: "Lender", fields: ["LENDER", "LENDER_NAME", "LENDER_ADDRESS", "LENDER_OWNERSHIP"] },
+  { key: "servicer", label: "Servicer", fields: ["SERVICER", "SERVICER_ADDRESS"] },
+  { key: "escrow", label: "Escrow holder", fields: ["ESCROW_NAME", "ESCROW_ADDRESS"] },
+  { key: "brokerage", label: "Brokerage", fields: ["BROKERAGE", "BROKERAGE_NAME", "BROKERAGE_ADDRESS", "BROKERAGE_CITYSTATEZIP", "DRE"] },
+];
+
 function LoanWorkspace() {
   const [loans, setLoans] = useState([]); // Always keep this as an array.
   const [activeId, setActiveId] = useState(null);
@@ -211,6 +295,70 @@ function LoanWorkspace() {
   const [workspaceError, setWorkspaceError] = useState("");
 
   const paymentRows = Array.isArray(fields.PAYMENT_ROWS) ? fields.PAYMENT_ROWS : [];
+  const schedule = simulateSchedule(fields);
+  const [profiles, setProfiles] = useState([]);
+  const [profileType, setProfileType] = useState("lender");
+  const [selectedProfile, setSelectedProfile] = useState("");
+  const [profileName, setProfileName] = useState("");
+  const [profileMessage, setProfileMessage] = useState("");
+  const [profilesBusy, setProfilesBusy] = useState(false);
+  const activeCategory = PROFILE_CATEGORIES.find((c) => c.key === profileType);
+  const categoryProfiles = profiles.filter((p) => p.category === profileType);
+
+  const loadProfiles = useCallback(async () => {
+    const { data, error } = await supabase.from("saved_profiles").select("id,category,name,fields").order("name");
+    if (error) throw error;
+    setProfiles(data || []);
+  }, []);
+  useEffect(() => { loadProfiles().catch((err) => setProfileMessage(`Saved profiles unavailable: ${err.message}. Apply the included SQL migration.`)); }, [loadProfiles]);
+
+  async function saveProfile() {
+    const name = profileName.trim();
+    if (!name) return setProfileMessage("Enter a profile name to save.");
+    setProfilesBusy(true); setProfileMessage("");
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) throw new Error("Please sign in again.");
+      const stored = Object.fromEntries(activeCategory.fields.map((key) => [key, fields[key] || ""]));
+      const { error } = await supabase.from("saved_profiles").insert({ user_id: user.id, category: profileType, name, fields: stored });
+      if (error) throw error;
+      await loadProfiles(); setProfileName(""); setProfileMessage("Profile saved for future loans.");
+    } catch (err) { setProfileMessage(err.message); }
+    finally { setProfilesBusy(false); }
+  }
+  function applyProfile() {
+    const selected = categoryProfiles.find((p) => p.id === selectedProfile);
+    if (!selected) return;
+    setFields((prev) => ({ ...prev, ...Object.fromEntries(activeCategory.fields.map((key) => [key, selected.fields?.[key] || ""])) }));
+    setProfileMessage(`${selected.name} loaded into this loan. Save the loan to persist it.`);
+  }
+  async function deleteProfile() {
+    if (!selectedProfile || !window.confirm("Delete this reusable profile? Existing loans will not change.")) return;
+    setProfilesBusy(true);
+    try {
+      const { error } = await supabase.from("saved_profiles").delete().eq("id", selectedProfile);
+      if (error) throw error;
+      setSelectedProfile(""); await loadProfiles(); setProfileMessage("Profile deleted.");
+    } catch (err) { setProfileMessage(err.message); }
+    finally { setProfilesBusy(false); }
+  }
+  function autoFillSchedule() {
+    const principal = numberValue(fields.LOAN_AMOUNT), rate = numberValue(fields.INTEREST_RATE);
+    const first = dateValue(fields.FIRST_PAYMENT) || dateValue(fields.FIRST_PAYMENT_DATE) || dateValue(fields.FIRST_PAYMENT_DUE);
+    if (!(principal > 0) || !(rate >= 0) || !first) {
+      setWorkspaceError("Enter Loan Amount, Interest Rate and First Payment Date before auto-filling."); return;
+    }
+    const maturity = dateValue(fields.MATURITY_DATE);
+    const statedTerm = String(fields.LOAN_TERM || "").match(/^(\d+)\s*(?:months?|mos?)?$/i);
+    const monthCount = statedTerm ? +statedTerm[1] : (maturity ? (maturity.getUTCFullYear() - first.getUTCFullYear()) * 12 + maturity.getUTCMonth() - first.getUTCMonth() + (maturity.getUTCDate() >= first.getUTCDate() ? 1 : 0) : NaN);
+    if (!Number.isInteger(monthCount) || monthCount < 1 || monthCount > 600) {
+      setWorkspaceError("Enter a valid Loan Term in months (e.g. 12 months) or Maturity Date."); return;
+    }
+    if (paymentRows.some((row) => Object.values(row).some((v) => String(v || "").trim())) && !window.confirm("Replace the current payment schedule with an interest-only draft?")) return;
+    setFields((prev) => ({ ...prev, NUMBER_OF_PAYMENTS: String(monthCount), PAYMENT_ROWS: [{ COUNT: String(monthCount), START: formatDate(first), DESCRIPTION: "", RATE: String(rate), AMOUNT: "" }] }));
+    setWorkspaceError("");
+  }
+
 
   const refreshList = useCallback(async () => {
     const data = await apiJson("/api/loans");
@@ -306,7 +454,7 @@ function LoanWorkspace() {
   function handleAddRow() {
     setFields((prev) => ({
       ...prev,
-      PAYMENT_ROWS: [...(Array.isArray(prev.PAYMENT_ROWS) ? prev.PAYMENT_ROWS : []), emptyPaymentRow()],
+      PAYMENT_ROWS: [...(Array.isArray(prev.PAYMENT_ROWS) ? prev.PAYMENT_ROWS : []), { ...emptyPaymentRow(), COUNT: "1", RATE: prev.INTEREST_RATE || "" }],
     }));
   }
 
@@ -335,7 +483,7 @@ function LoanWorkspace() {
     try {
       const data = await apiJson(`/api/loans/${activeId}`, {
         method: "PUT",
-        body: JSON.stringify({ fields, label: labelInput }),
+        body: JSON.stringify({ fields: { ...fields, PAYMENT_ROWS: schedule.valid ? schedule.rows : paymentRows }, label: labelInput }),
       });
       setLabelInput(data.label);
       await refreshList();
@@ -348,11 +496,12 @@ function LoanWorkspace() {
   }
 
   async function saveActiveLoan() {
+    if (!schedule.valid) throw new Error(schedule.message);
     // Shared helper: persist current fields before either generate action,
     // so the downloaded doc(s) always match what's on screen.
     await apiJson(`/api/loans/${activeId}`, {
       method: "PUT",
-      body: JSON.stringify({ fields, label: labelInput }),
+      body: JSON.stringify({ fields: { ...fields, PAYMENT_ROWS: schedule.valid ? schedule.rows : paymentRows }, label: labelInput }),
     });
     await refreshList();
   }
@@ -735,14 +884,31 @@ function LoanWorkspace() {
               ))}
 
               <fieldset>
+                <legend>Saved Company Profiles</legend>
+                <p className="pay-note">Save and reuse lender, trustee, servicer, brokerage and escrow information for future loans. Profiles are stored in your signed-in Supabase account.</p>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                  <select value={profileType} onChange={(e) => { setProfileType(e.target.value); setSelectedProfile(""); setProfileMessage(""); }} aria-label="Profile category" style={{ padding: 9 }}>
+                    {PROFILE_CATEGORIES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+                  </select>
+                  <select value={selectedProfile} onChange={(e) => setSelectedProfile(e.target.value)} aria-label="Saved profile" style={{ padding: 9, minWidth: 180 }}>
+                    <option value="">Select saved profile</option>
+                    {categoryProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <button type="button" className="lender-inst-btn" disabled={!selectedProfile} onClick={applyProfile}>Fill loan fields</button>
+                  <button type="button" className="lender-inst-btn" disabled={!selectedProfile || profilesBusy} onClick={deleteProfile}>Delete profile</button>
+                </div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+                  <input type="text" value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder={`Name this ${activeCategory.label.toLowerCase()} profile`} aria-label="Profile name" style={{ minWidth: 250, padding: 9, border: "1px solid #d6dbe4", borderRadius: 8 }} />
+                  <button type="button" className="lender-inst-btn" disabled={profilesBusy} onClick={saveProfile}>Save current {activeCategory.label.toLowerCase()} fields</button>
+                </div>
+                {profileMessage && <p className="pay-note" role="status" style={{ marginTop: 10 }}>{profileMessage}</p>}
+              </fieldset>
+
+              <fieldset>
                 <legend>Payment Schedule (Note, Sec. 3)</legend>
-                <p className="pay-note">
-                  Each line below becomes one row of the PAYMENTS table in the
-                  Note. Add as many rate tiers as the loan needs. Leave
-                  Description blank to get "Monthly Beginning 09/01/2026"
-                  automatically from the start date, or type your own wording to
-                  override it. Don't type the $ or % — those are added for you.
-                </p>
+                <p className="pay-note">Build a schedule automatically from the loan terms, then adjust each tier. Annual RATE is not the payment: if a payment is smaller than the interest accrued, the unpaid interest increases principal (negative amortization). Leave PAYMENT empty for an automatically calculated interest-only amount; enter an amount to override it. Generated Word documents use the displayed amounts.</p>
+                <button type="button" className="add-row-btn" onClick={autoFillSchedule} style={{ marginTop: 0, marginBottom: 14 }}>Auto-fill schedule from loan terms</button>
+                <p className="pay-note">For a 6% rate during the first 6 months, set # of Payments to 6 and Rate to 6. Add another row for the next period. To model negative amortization, enter a payment below the interest due.</p>
 
                 <div className="pay-grid">
                   <div className="pay-row pay-head">
@@ -770,7 +936,7 @@ function LoanWorkspace() {
                         type="text"
                         autoComplete="off"
                         aria-label={`Row ${index + 1} start date`}
-                        placeholder="09/01/2026"
+                        placeholder={schedule.valid ? (schedule.rows[index]?.START || "Auto") : "Auto from first payment"}
                         value={row.START || ""}
                         onChange={(e) =>
                           handleRowChange(index, "START", e.target.value)
@@ -800,7 +966,7 @@ function LoanWorkspace() {
                         type="text"
                         autoComplete="off"
                         aria-label={`Row ${index + 1} payment amount`}
-                        placeholder="1,200.00"
+                        placeholder={schedule.valid ? (schedule.rows[index]?.AMOUNT || "Auto") : "Auto (interest only)"}
                         value={row.AMOUNT || ""}
                         onChange={(e) =>
                           handleRowChange(index, "AMOUNT", e.target.value)
@@ -838,13 +1004,24 @@ function LoanWorkspace() {
                   ))}
                 </div>
 
-                <button
-                  type="button"
-                  className="add-row-btn"
-                  onClick={handleAddRow}
-                >
-                  + Add payment row
-                </button>
+                <button type="button" className="add-row-btn" onClick={handleAddRow}>+ Add payment tier</button>
+                <div style={{ marginTop: 20, background: "#f8faff", border: "1px solid #d9e2f3", padding: 14, borderRadius: 10 }}>
+                  <strong>Live payment preview</strong>
+                  {!schedule.valid ? <p className="pay-note">{schedule.message}</p> : <>
+                    <p className="pay-note" style={{ marginTop: 8 }}>{schedule.installments.length} payments · Remaining principal after schedule: <strong>{formatMoney(schedule.endingBalance)}</strong></p>
+                    <div style={{ maxHeight: 290, overflow: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                        <thead><tr>{["#", "Date", "Rate", "Interest", "Payment", "Balance", "Type"].map((title) => <th key={title} style={{ textAlign: "left", padding: 6, borderBottom: "1px solid #d6dbe4" }}>{title}</th>)}</tr></thead>
+                        <tbody>{schedule.installments.map((item) => <tr key={item.number}>
+                          <td style={{ padding: 5 }}>{item.number}</td><td>{item.date}</td><td>{item.rate}%</td><td>{formatMoney(item.interest)}</td><td>{formatMoney(item.payment)}</td><td>{formatMoney(item.balance)}</td>
+                          <td style={{ color: item.negativeAm ? "#a33919" : "#2b6650" }}>{item.negativeAm ? "Neg. amortization" : "No neg. am."}</td>
+                        </tr>)}</tbody>
+                      </table>
+                    </div>
+                    {schedule.warnings?.map((w, i) => <p key={i} style={{ color: "#a33919", fontSize: 12 }}>{w}</p>)}
+                    <p className="pay-note">Preview uses monthly interest = outstanding principal × annual rate ÷ 12, with monthly rounding. It does not model daily accrual, irregular periods, fees, or contractual compounding conventions. Confirm figures and loan terms before signing.</p>
+                  </>}
+                </div>
               </fieldset>
             </div>
 
