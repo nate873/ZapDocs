@@ -1051,7 +1051,7 @@ function LoanWorkspace() {
               >
                 {lenderInstStatus === "generating"
                   ? "Generating…"
-                  : "Generate lender documents"}
+                  : "Generate Servicing Agreement"}
               </button>
               <button
                 className="lender-inst-btn"
@@ -1060,13 +1060,13 @@ function LoanWorkspace() {
               >
                 {disclosureStatus === "generating"
                   ? "Generating…"
-                  : "Generate disclosure"}
+                  : "Generate Lender Disclosures"}
               </button>
               <span className="submit-note">
                 "Generate documents" downloads the full .zip package.
-                "Generate lender documents" downloads just the servicing
-                agreement as a single Word file. "Generate disclosure"
-                downloads the lender disclosure statement (CA loans only).
+                "Generate Servicing Agreement" downloads the standalone servicing
+                document (California) or agreement (Florida) as a Word file.
+                "Generate Lender Disclosures" downloads the California lender disclosure statement.
               </span>
             </div>
 
