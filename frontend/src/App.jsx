@@ -91,7 +91,7 @@ const FIELD_GROUPS = [
     ],
   },
   {
-    name: "California Note (10/30/2026)",
+    name: "California Note",
     states: ["CA"],
     fields: [
       ["PREPAYMENT_PENALTY", "Prepayment Penalty (full clause / formula)"],
@@ -120,7 +120,7 @@ const FIELD_GROUPS = [
     ],
   },
   {
-    name: "California Deed of Trust (10/30/2026)",
+    name: "California Deed of Trust",
     states: ["CA"],
     fields: [
       ["BROKERAGE", "Brokerage (California boiler)"],
@@ -319,8 +319,11 @@ const PROFILE_CATEGORIES = [
   { key: "brokerage", label: "Brokerage", fields: ["BROKERAGE", "BROKERAGE_NAME", "BROKERAGE_ADDRESS", "BROKERAGE_CITYSTATEZIP", "DRE"] },
 ];
 
-function LoanWorkspace() {
+function LoanWorkspace({ onHome, onSignOut }) {
   const [loans, setLoans] = useState([]); // Always keep this as an array.
+  const [view, setView] = useState("dashboard");
+  const [loanSearch, setLoanSearch] = useState("");
+  const [openGroup, setOpenGroup] = useState("Loan Details");
   const [activeId, setActiveId] = useState(null);
   const [fields, setFields] = useState(emptyFields());
   const [labelInput, setLabelInput] = useState("");
@@ -443,6 +446,7 @@ function LoanWorkspace() {
 
   async function openLoan(id) {
     setActiveId(id);
+    setView("information");
     let data;
     try {
       data = await apiJson(`/api/loans/${id}`);
@@ -470,6 +474,8 @@ function LoanWorkspace() {
       const data = await apiJson("/api/loans", { method: "POST" });
       await refreshList();
       setActiveId(data.id);
+      setView("information");
+      setOpenGroup("Loan Details");
       setFields(emptyFields());
       setLabelInput(data.label || "New Loan");
       setSaveStatus("idle");
@@ -492,6 +498,7 @@ function LoanWorkspace() {
           setActiveId(null);
           setFields(emptyFields());
           setLabelInput("");
+          setView("loans");
         }
       }
       setWorkspaceError("");
@@ -688,285 +695,122 @@ function LoanWorkspace() {
     }
   }
 
-  return (
-    <div className="app-shell">
-      <style>{`
-        .lender-inst-btn {
-          padding: 10px 20px;
-          border-radius: 999px;
-          border: 1.5px solid #d6dbe4;
-          background: #ffffff;
-          color: #3452eb;
-          font-weight: 600;
-          font-size: 14px;
-          cursor: pointer;
-          transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-        }
-        .lender-inst-btn:hover:not(:disabled) {
-          background: #eef1ff;
-          border-color: #3452eb;
-        }
-        .lender-inst-btn:active:not(:disabled) {
-          background: #e2e7ff;
-        }
-        .lender-inst-btn:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
+  const editorGroups = [
+    {name:"Loan Details", fields: [...FIELD_GROUPS[0].fields, ...FIELD_GROUPS[1].fields]},
+    {name:"Payment Terms", fields: [...FIELD_GROUPS[2].fields, ...FIELD_GROUPS[3].fields], special:"payments"},
+    {name:"Property", fields: FIELD_GROUPS[4].fields.filter(([k])=>!["TRUSTEE","TRUSTEE_ADDRESS"].includes(k))},
+    {name:"Borrower", fields: FIELD_GROUPS[6].fields},
+    {name:"Lender", fields: FIELD_GROUPS[7].fields, profile:"lender"},
+    {name:"Trustee", states:["CA"], fields: FIELD_GROUPS[4].fields.filter(([k])=>["TRUSTEE","TRUSTEE_ADDRESS"].includes(k)), profile:"trustee"},
+    {name:"Servicer", fields: FIELD_GROUPS[8].fields, profile:"servicer"},
+    {name:"Brokerage", states:["CA"], fields: FIELD_GROUPS[5].fields, profile:"brokerage"},
+    {name:"Escrow", fields: FIELD_GROUPS[9].fields.filter(([k])=>["ESCROW_NAME","ESCROW_ADDRESS"].includes(k)), profile:"escrow"},
+    {name:"Disclosures", states:["CA"], fields: FIELD_GROUPS[9].fields.filter(([k])=>!["ESCROW_NAME","ESCROW_ADDRESS"].includes(k))}
+  ];
+  const visibleGroups = editorGroups.filter(g=>!g.states || g.states.includes(fields.STATE));
+  const selectedGroup = visibleGroups.find(g=>g.name===openGroup) || visibleGroups[0];
+  const filteredLoans = loans.filter(l => String(l.label || "").toLowerCase().includes(loanSearch.toLowerCase()) || String(l.id).includes(loanSearch));
+  const totalAmount = loans.reduce((sum,l)=>sum+(numberValue(l?.fields?.LOAN_AMOUNT)||0),0);
 
-        /* ---- Payment schedule table editor ---- */
-        .pay-note {
-          margin: 0 0 14px;
-          font-size: 13px;
-          line-height: 1.5;
-          color: #5b6472;
-        }
-        .pay-grid {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-        .pay-row {
-          display: grid;
-          grid-template-columns: 0.7fr 0.9fr 1.6fr 0.7fr 0.9fr 62px;
-          gap: 8px;
-          align-items: center;
-        }
-        .pay-head {
-          font-size: 12px;
-          font-weight: 600;
-          letter-spacing: 0.02em;
-          text-transform: uppercase;
-          color: #5b6472;
-        }
-        .pay-head span {
-          padding-left: 2px;
-        }
-        .pay-row input {
-          width: 100%;
-          padding: 8px 10px;
-          border: 1px solid #d6dbe4;
-          border-radius: 8px;
-          font-size: 14px;
-          font-family: inherit;
-          box-sizing: border-box;
-        }
-        .pay-row input:focus {
-          outline: none;
-          border-color: #3452eb;
-          box-shadow: 0 0 0 3px rgba(52, 82, 235, 0.12);
-        }
-        .pay-row-tools {
-          display: flex;
-          gap: 4px;
-          justify-content: flex-end;
-        }
-        .pay-icon-btn {
-          width: 26px;
-          height: 28px;
-          padding: 0;
-          border: 1px solid #d6dbe4;
-          border-radius: 6px;
-          background: #fff;
-          color: #5b6472;
-          font-size: 13px;
-          line-height: 1;
-          cursor: pointer;
-        }
-        .pay-icon-btn:hover:not(:disabled) {
-          border-color: #3452eb;
-          color: #3452eb;
-          background: #eef1ff;
-        }
-        .pay-icon-btn:disabled {
-          opacity: 0.35;
-          cursor: not-allowed;
-        }
-        .pay-icon-btn.danger:hover {
-          border-color: #d33;
-          color: #d33;
-          background: #fdeeee;
-        }
-        .add-row-btn {
-          margin-top: 12px;
-          padding: 8px 16px;
-          border-radius: 999px;
-          border: 1.5px dashed #b9c0cc;
-          background: #fff;
-          color: #3452eb;
-          font-weight: 600;
-          font-size: 13px;
-          cursor: pointer;
-        }
-        .add-row-btn:hover {
-          border-style: solid;
-          border-color: #3452eb;
-          background: #eef1ff;
-        }
-        @media (max-width: 900px) {
-          .pay-row {
-            grid-template-columns: 1fr 1fr;
-          }
-          .pay-head {
-            display: none;
-          }
-          .pay-row-tools {
-            grid-column: 1 / -1;
-          }
-        }
+  function profileControls(categoryKey) {
+    const category = PROFILE_CATEGORIES.find(c=>c.key===categoryKey);
+    const matching = profiles.filter(p=>p.category===categoryKey);
+    const chosen = profileType===categoryKey ? selectedProfile : "";
+    return <div className="zd-profile">
+      <div className="zd-profile-head"><strong>Saved {category.label} Profiles</strong><span>Reuse this information on future loans</span></div>
+      <div className="zd-profile-row">
+        <select aria-label={`Saved ${category.label} profile`} value={chosen} onChange={e=>{setProfileType(categoryKey);setSelectedProfile(e.target.value);setProfileMessage("");}}>
+          <option value="">Select saved {category.label.toLowerCase()}</option>
+          {matching.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <button type="button" disabled={!chosen || profilesBusy} onClick={()=>{
+          const p=matching.find(p=>p.id===chosen); if(!p)return;
+          setFields(prev=>({...prev,...Object.fromEntries(category.fields.map(k=>[k,p.fields?.[k]||""]))}));
+          setProfileMessage(`${p.name} loaded. Save loan to keep these changes.`);
+        }}>Use profile</button>
+        <button type="button" disabled={!chosen || profilesBusy} onClick={deleteProfile}>Delete</button>
+      </div>
+      <div className="zd-profile-row">
+        <input aria-label={`Name new ${category.label} profile`} placeholder={`Name this ${category.label.toLowerCase()} profile`} value={profileType===categoryKey?profileName:""} onChange={e=>{setProfileType(categoryKey);setProfileName(e.target.value)}} />
+        <button type="button" disabled={profilesBusy} onClick={()=>{setProfileType(categoryKey); const name=profileName.trim();
+          if(!name){setProfileMessage("Enter a profile name first.");return;}
+          setProfilesBusy(true);setProfileMessage("");
+          (async()=>{try{const {data:{user},error:ue}=await supabase.auth.getUser();if(ue||!user)throw new Error("Sign in again.");
+            const stored=Object.fromEntries(category.fields.map(k=>[k,fields[k]||""]));
+            const {error}=await supabase.from("saved_profiles").insert({user_id:user.id,category:categoryKey,name,fields:stored});
+            if(error)throw error;await loadProfiles();setProfileName("");setProfileMessage("Profile saved for future loans.");
+          }catch(err){setProfileMessage(err.message)}finally{setProfilesBusy(false)}})();
+        }}>Save these fields</button>
+      </div>
+      {profileType===categoryKey && profileMessage && <p role="status" className="zd-hint">{profileMessage}</p>}
+    </div>;
+  }
+
+  return (
+    <div className="zd-app">
+      <style>{`
+        .zd-app{--ink:#111b37;--muted:#68758f;--line:#e2e8f2;--blue:#3458e8;background:#f5f7fb;display:flex;min-height:100vh;color:var(--ink);font-family:Inter,system-ui,Arial,sans-serif;box-sizing:border-box}
+        .zd-app *{box-sizing:border-box}.zd-app button,.zd-app input,.zd-app select{font:inherit}.zd-app button{cursor:pointer}
+        .zd-side{width:218px;flex:0 0 218px;background:#fff;border-right:1px solid var(--line);padding:25px 14px;position:sticky;top:0;height:100vh}
+        .zd-brand{font-weight:850;color:#0a1744;font-size:23px;letter-spacing:-.7px;padding:6px 14px 25px}
+        .zd-nav{display:flex;flex-direction:column;gap:7px}.zd-nav button{width:100%;border:0;background:none;padding:13px 15px;text-align:left;color:#4f5a74;border-radius:10px;font-size:14px;font-weight:650}.zd-nav button:hover{background:#f1f4ff}.zd-nav button.active{background:#ebefff;color:#284dd9}
+        .zd-main{flex:1;min-width:0}.zd-top{display:flex;align-items:center;justify-content:space-between;gap:15px;background:#fff;border-bottom:1px solid var(--line);padding:19px 27px;min-height:81px;flex-wrap:wrap}
+        .zd-top h1{font-size:22px;letter-spacing:-.5px;margin:0}.zd-top small{color:var(--muted);font-size:12px}.zd-top-actions{display:flex;align-items:center;flex-wrap:wrap;gap:9px}
+        .zd-button{border:1px solid #cad4e5;background:white;border-radius:9px;padding:10px 15px;color:#31415d;font-weight:700;font-size:13px}.zd-button:hover{background:#f2f5ff}.zd-button.primary{background:#3159eb;border-color:#3159eb;color:#fff}.zd-button.primary:hover{background:#2447c9}.zd-button:disabled{opacity:.5;cursor:not-allowed}
+        .zd-content{padding:27px;max-width:1440px;margin:auto}.zd-kpi{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px;margin:20px 0}.zd-card{background:white;border:1px solid var(--line);border-radius:13px;padding:21px;box-shadow:0 2px 6px rgba(25,42,88,.02)}.zd-card h2{margin:0 0 9px;font-size:18px}.zd-stat-label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}.zd-stat{font-size:30px;font-weight:800;margin-top:10px;color:#15264c}
+        .zd-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.zd-search{padding:11px 13px;border:1px solid #cdd6e6;border-radius:9px;min-width:245px;background:#fff;max-width:100%}
+        .zd-table-wrap{overflow:auto;margin-top:15px}.zd-table{border-collapse:collapse;width:100%;font-size:14px}.zd-table th,.zd-table td{text-align:left;padding:15px;border-bottom:1px solid var(--line)}.zd-table th{color:var(--muted);font-size:12px}.zd-table tr:last-child td{border-bottom:0}.zd-table .zd-button{padding:7px 10px}
+        .zd-edit-layout{display:grid;grid-template-columns:210px minmax(0,1fr);gap:18px;align-items:start}.zd-sections{position:sticky;top:20px;background:white;border:1px solid var(--line);border-radius:12px;padding:9px}.zd-sections button{display:block;width:100%;text-align:left;padding:12px 11px;border:none;background:transparent;color:#5a6680;font-weight:650;border-radius:8px;font-size:13px}.zd-sections button.active{background:#edf1ff;color:#2749cf}.zd-sections button:hover{background:#f3f6fd}
+        .zd-form-header{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:13px;margin-bottom:15px}.zd-field-label{font-weight:650;color:#3c4a66;font-size:12px;display:block;margin-bottom:7px}.zd-input{width:100%;padding:11px 12px;border:1px solid #cfd8e7;border-radius:9px;background:white;color:#19263e}.zd-input:focus,.zd-search:focus{outline:2px solid #b5c3ff;border-color:#3159eb}.zd-state button{border:1px solid #d4dcec;background:white;padding:10px 15px;color:#4f5e79}.zd-state button:first-child{border-radius:9px 0 0 9px}.zd-state button:last-child{border-radius:0 9px 9px 0}.zd-state button.active{background:#3159eb;color:white;border-color:#3159eb}
+        .zd-field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:17px}.zd-field{min-width:0}.zd-field.wide{grid-column:1/-1}.zd-field input{width:100%;border:1px solid #cfd8e7;border-radius:9px;padding:11px 12px;color:#172542}.zd-field input:focus{outline:2px solid #b6c6ff}.zd-hint{font-size:12px;color:var(--muted);line-height:1.5}.zd-profile{margin-top:22px;padding:16px;background:#f7f9ff;border:1px solid #e1e7f7;border-radius:11px}.zd-profile-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;font-size:13px}.zd-profile-head span{color:#67738c}.zd-profile-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}.zd-profile-row input,.zd-profile-row select{flex:1;min-width:170px;padding:10px;border:1px solid #cfd8e7;border-radius:8px;background:white}.zd-profile-row button{border:1px solid #c9d3e3;background:white;color:#3154d7;border-radius:8px;padding:9px 12px;font-size:12px;font-weight:700}.zd-profile-row button:disabled{opacity:.5}
+        .zd-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:19px;padding:17px;background:white;border:1px solid var(--line);border-radius:12px}.zd-alert{padding:13px 15px;margin-bottom:15px;background:#fff1f0;border:1px solid #f5c0bb;border-radius:9px;color:#aa332a;font-size:13px}.zd-section-title{margin:0 0 7px;font-size:19px}.zd-lead{color:var(--muted);font-size:13px;margin:0 0 21px}
+        .zd-pay fieldset{border:1px solid #e1e7f2;border-radius:10px;margin:17px 0;padding:18px;min-width:0}.zd-pay legend{font-weight:750;color:#2445b6;font-size:14px;padding:0 6px}.zd-pay .pay-note{color:#63718a;font-size:12px;line-height:1.5}.zd-pay .add-row-btn{padding:9px 14px;border:1px dashed #bac5d7;background:#fff;color:#3159eb;border-radius:9px;margin:9px 0;font-weight:650}.zd-pay .pay-grid{display:flex;flex-direction:column;gap:8px}.zd-pay .pay-row{display:grid;grid-template-columns:.7fr .9fr 1.5fr .7fr .9fr 78px;gap:7px;align-items:center}.zd-pay .pay-row input{min-width:0;width:100%;padding:9px;border:1px solid #d1dbea;border-radius:7px}.zd-pay .pay-head{font-size:11px;text-transform:uppercase;color:#66748d}.zd-pay .pay-row-tools{display:flex;gap:3px}.zd-pay .pay-icon-btn{border:1px solid #d1dbea;background:white;border-radius:6px;padding:5px 7px}.zd-pay .pay-icon-btn:disabled{opacity:.4}
+        .zd-app .error-msg{color:#ac332b;font-size:13px}.zd-app .lender-inst-btn{border:1px solid #cfd8e9;background:white;border-radius:9px;padding:10px 13px;font-weight:700;color:#3159e4}
+        @media(max-width:1000px){.zd-edit-layout{grid-template-columns:1fr}.zd-sections{position:static;display:flex;flex-wrap:wrap}.zd-sections button{width:auto}.zd-field-grid{grid-template-columns:1fr}}
+        @media(max-width:780px){.zd-app{display:block}.zd-side{width:100%;height:auto;position:static;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line)}.zd-brand{padding:4px;font-size:19px}.zd-nav{flex-direction:row;gap:3px}.zd-nav button{padding:9px;font-size:12px}.zd-content{padding:15px}.zd-kpi{grid-template-columns:1fr}.zd-pay .pay-row{grid-template-columns:repeat(2,minmax(0,1fr));padding:10px;border:1px solid #e2e7f2;border-radius:8px}.zd-pay .pay-head{display:none}.zd-pay .pay-row-tools{grid-column:1/-1}}
       `}</style>
-      <aside className="sidebar">
-        <div className="sidebar-header">
-          <p className="eyebrow">Action Funding</p>
-          <h2>Loans</h2>
-        </div>
-        <button className="add-loan-btn" onClick={handleAddLoan}>
-          + New Loan
-        </button>
-        <nav className="loan-tabs">
-          {loadingList && <p className="sidebar-empty">Loading…</p>}
-          {!loadingList && loans.length === 0 && (
-            <p className="sidebar-empty">No loans yet. Add one above.</p>
-          )}
-          {loans.map((loan) => (
-            <button
-              key={loan.id}
-              className={`loan-tab${loan.id === activeId ? " active" : ""}`}
-              onClick={() => openLoan(loan.id)}
-            >
-              <span className="loan-tab-label">{loan.label}</span>
-              <span
-                className="loan-tab-delete"
-                onClick={(e) => handleDeleteLoan(loan.id, e)}
-                title="Delete loan"
-              >
-                ×
-              </span>
-            </button>
-          ))}
+      <aside className="zd-side">
+        <div className="zd-brand">ZapDocs</div>
+        <nav className="zd-nav" aria-label="Workspace navigation">
+          <button className={view==="dashboard"?"active":""} onClick={()=>setView("dashboard")}>▦ Dashboard</button>
+          <button className={view==="loans"?"active":""} onClick={()=>setView("loans")}>▤ Loans</button>
+          <button className={view==="information"?"active":""} onClick={()=>setView("information")}>▣ Loan Information</button>
         </nav>
       </aside>
-
-      <main className="main-panel">
-        {workspaceError && <p className="error-msg" role="alert" style={{ padding: "16px 24px" }}>{workspaceError}</p>}
-        {!activeId && !loadingList && (
-          <div className="empty-state">
-            <p>Select a loan on the left, or add a new one to get started.</p>
-          </div>
-        )}
-
-        {activeId && (
-          <>
-            <header className="page-header">
-              <label className="tab-name-label" htmlFor="tab-name">
-                Tab name
-              </label>
-              <input
-                id="tab-name"
-                className="tab-name-input"
-                type="text"
-                value={labelInput}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setLabelInput(value);
-                  // Reflect the typed name in the sidebar immediately, so it's
-                  // obvious it's "taking" even before you hit Save.
-                  setLoans((prev) =>
-                    prev.map((loan) =>
-                      loan.id === activeId
-                        ? { ...loan, label: value || "New Loan" }
-                        : loan
-                    )
-                  );
-                }}
-                placeholder="e.g. Ramirez / 92nd"
-              />
-              <p className="subtitle">
-                This loan's info is saved automatically when you click Save,
-                and stays here for you to come back and update anytime.
-              </p>
-            </header>
-
-            <div className="state-toggle-row">
-              <span className="state-toggle-label">Loan State</span>
-              <div className="state-toggle">
-                <button
-                  type="button"
-                  className={`state-option${fields.STATE === "FL" ? " active" : ""}`}
-                  onClick={() => handleChange("STATE", "FL")}
-                >
-                  Florida
-                </button>
-                <button
-                  type="button"
-                  className={`state-option${fields.STATE === "CA" ? " active" : ""}`}
-                  onClick={() => handleChange("STATE", "CA")}
-                >
-                  California
-                </button>
-              </div>
-              <span className="state-toggle-note">
-                {fields.STATE === "CA"
-                  ? "Generates a Deed of Trust instead of a Mortgage."
-                  : "Generates a Mortgage instead of a Deed of Trust."}
-              </span>
-            </div>
-
-            <div className="form-body">
-              {FIELD_GROUPS.filter((group) => !group.states || group.states.includes(fields.STATE)).map((group) => (
-                <fieldset key={group.name}>
-                  <legend>{group.name}</legend>
-                  <div className="row-list">
-                    {group.fields
-                      .filter(([name]) => {
-                        // Only show the second signer fields after a second borrower
-                        // has actually been entered.
-                        if (
-                          name === "SIGNATURE_FOOTER_2" ||
-                          name === "SIGNATURE_TITLE_2"
-                        ) {
-                          return Boolean((fields.BORROWER_2 || "").trim());
-                        }
-                        return true;
-                      })
-                      .map(([name, label]) => (
-                        <div key={name} className="row">
-                          <label htmlFor={name}>{label}</label>
-                          <input
-                            type="text"
-                            id={name}
-                            name={name}
-                            autoComplete="off"
-                            value={fields[name]}
-                            onChange={(e) => handleChange(name, e.target.value)}
-                          />
-                        </div>
-                      ))}
-                  </div>
-                </fieldset>
-              ))}
-
-              <fieldset>
-                <legend>Saved Company Profiles</legend>
-                <p className="pay-note">Save and reuse lender, trustee, servicer, brokerage and escrow information for future loans. Profiles are stored in your signed-in Supabase account.</p>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                  <select value={profileType} onChange={(e) => { setProfileType(e.target.value); setSelectedProfile(""); setProfileMessage(""); }} aria-label="Profile category" style={{ padding: 9 }}>
-                    {PROFILE_CATEGORIES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
-                  </select>
-                  <select value={selectedProfile} onChange={(e) => setSelectedProfile(e.target.value)} aria-label="Saved profile" style={{ padding: 9, minWidth: 180 }}>
-                    <option value="">Select saved profile</option>
-                    {categoryProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                  <button type="button" className="lender-inst-btn" disabled={!selectedProfile} onClick={applyProfile}>Fill loan fields</button>
-                  <button type="button" className="lender-inst-btn" disabled={!selectedProfile || profilesBusy} onClick={deleteProfile}>Delete profile</button>
-                </div>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
-                  <input type="text" value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder={`Name this ${activeCategory.label.toLowerCase()} profile`} aria-label="Profile name" style={{ minWidth: 250, padding: 9, border: "1px solid #d6dbe4", borderRadius: 8 }} />
-                  <button type="button" className="lender-inst-btn" disabled={profilesBusy} onClick={saveProfile}>Save current {activeCategory.label.toLowerCase()} fields</button>
-                </div>
-                {profileMessage && <p className="pay-note" role="status" style={{ marginTop: 10 }}>{profileMessage}</p>}
-              </fieldset>
-
+      <main className="zd-main">
+        <header className="zd-top">
+          <div><h1>{view==="dashboard"?"Dashboard":view==="loans"?"Loans":"Loan Information"}</h1><small>{activeId ? `Current loan: ${labelInput||"New Loan"}` : "Manage and generate your loan documents"}</small></div>
+          <div className="zd-top-actions"><button className="zd-button" onClick={onHome}>Home</button><button className="zd-button" onClick={onSignOut}>Sign out</button><button className="zd-button primary" onClick={handleAddLoan}>＋ New Loan</button></div>
+        </header>
+        <div className="zd-content">
+          {workspaceError && <div role="alert" className="zd-alert">{workspaceError}</div>}
+          {view==="dashboard" && <>
+            <div className="zd-toolbar"><div><h2 style={{margin:0}}>Loan overview</h2><p className="zd-hint">Your saved loans and document workspace</p></div><button className="zd-button" onClick={()=>setView("loans")}>View all loans</button></div>
+            <div className="zd-kpi"><div className="zd-card"><div className="zd-stat-label">Saved Loans</div><div className="zd-stat">{loans.length}</div></div><div className="zd-card"><div className="zd-stat-label">Current Loan</div><div className="zd-stat" style={{fontSize:20}}>{activeId?labelInput||"New Loan":"None selected"}</div></div><div className="zd-card"><div className="zd-stat-label">Available Documents</div><div className="zd-stat" style={{fontSize:20}}>Word packages</div></div></div>
+            <div className="zd-card"><div className="zd-toolbar"><h2>Recent Loans</h2><button className="zd-button" onClick={()=>setView("loans")}>See all</button></div>{loans.length===0?<p className="zd-hint">No saved loans yet. Create one with New Loan.</p>:<div className="zd-table-wrap"><table className="zd-table"><thead><tr><th>Loan</th><th>Action</th></tr></thead><tbody>{loans.slice(0,6).map(l=><tr key={l.id}><td>{l.label||"Untitled loan"}</td><td><button className="zd-button" onClick={()=>openLoan(l.id)}>Open loan</button></td></tr>)}</tbody></table></div>}</div>
+          </>}
+          {view==="loans" && <div className="zd-card"><div className="zd-toolbar"><div><h2>All Loans</h2><p className="zd-hint">Open an existing loan to edit its information or generate documents.</p></div><input className="zd-search" placeholder="Search loans..." value={loanSearch} onChange={e=>setLoanSearch(e.target.value)} /></div>
+            {loadingList?<p className="zd-hint">Loading loans...</p>:filteredLoans.length===0?<p className="zd-hint">No matching loans found.</p>:<div className="zd-table-wrap"><table className="zd-table"><thead><tr><th>Loan Name</th><th>Loan ID</th><th>Actions</th></tr></thead><tbody>{filteredLoans.map(l=><tr key={l.id}><td><strong>{l.label||"Untitled loan"}</strong></td><td>{String(l.id).slice(0,10)}</td><td><div style={{display:"flex",gap:8}}><button className="zd-button" onClick={()=>openLoan(l.id)}>Open</button><button className="zd-button" style={{color:"#ba332e"}} onClick={e=>handleDeleteLoan(l.id,e)}>Delete</button></div></td></tr>)}</tbody></table></div>}
+          </div>}
+          {view==="information" && !activeId && <div className="zd-card"><h2>No loan selected</h2><p className="zd-hint">Choose an existing loan or create a new one to enter information.</p><button className="zd-button primary" onClick={()=>setView("loans")}>Browse loans</button></div>}
+          {view==="information" && activeId && <>
+            <div className="zd-form-header"><div style={{flex:"1 1 260px"}}><label className="zd-field-label" htmlFor="zd-loan-label">Loan name</label><input className="zd-input" id="zd-loan-label" placeholder="Example: Smith - 1037 Garfield" value={labelInput} onChange={e=>setLabelInput(e.target.value)} /></div><div><label className="zd-field-label">Loan state</label><div className="zd-state"><button className={fields.STATE==="FL"?"active":""} onClick={()=>handleChange("STATE","FL")}>Florida</button><button className={fields.STATE==="CA"?"active":""} onClick={()=>handleChange("STATE","CA")}>California</button></div></div></div>
+            <div className="zd-edit-layout"><nav className="zd-sections" aria-label="Loan information sections">{visibleGroups.map(g=><button key={g.name} className={selectedGroup.name===g.name?"active":""} onClick={()=>setOpenGroup(g.name)}>{g.name}</button>)}</nav>
+              <div><section className="zd-card"><h2 className="zd-section-title">{selectedGroup.name}</h2><p className="zd-lead">Enter information once. Saved company profiles are available inside the relevant section.</p>
+                <div className="zd-field-grid">{selectedGroup.fields.filter(([key])=>{
+                  if(["SIGNATURE_FOOTER_2","SIGNATURE_TITLE_2"].includes(key)&&!String(fields.BORROWER_2||"").trim())return false;
+                  if(selectedGroup.name==="Payment Terms" && key==="PREPAID_PAYMENTS")return true;
+                  return true;
+                }).filter(([key],index,all)=>all.findIndex(([k])=>k===key)===index).map(([key,label])=>{
+                  // Keep distinct fields in their original backing state; format examples are placeholders, not forced values.
+                  const isCA=fields.STATE==="CA";
+                  if(selectedGroup.name==="Payment Terms" && isCA && ["FIRST_PREPAID_MONTH","LAST_PREPAID_MONTH","FIRST_PAYMENT_DUE"].includes(key))return null;
+                  if(selectedGroup.name==="Payment Terms" && !isCA && ["FIRST_PREPAID","LAST_PREPAID","FIRST_PAYMENT_DATE","PREPAYMENT_PENALTY","PREPAID_NUMBER_MONTHS"].includes(key))return null;
+                  if(selectedGroup.name==="Loan Details" && key==="SERVICING_DATE" && fields.STATE!=="CA")return null;
+                  return <div className="zd-field" key={key}><label className="zd-field-label" htmlFor={`zd-${key}`}>{label.replace(/ \(e\.g\..*\)/, "")}</label><input id={`zd-${key}`} autoComplete="off" value={fields[key]||""} onChange={e=>handleChange(key,e.target.value)} placeholder={label.match(/e\.g\.[^)]*/)?.[0]?.replace("e.g.","Example:")||""} /></div>;
+                })}</div>
+                {selectedGroup.profile && profileControls(selectedGroup.profile)}
+                {selectedGroup.special==="payments" && <div className="zd-pay">
               <fieldset>
                 <legend>Loan Payment Structure</legend>
                 <p className="pay-note">Choose the Note clause and the way payments are shown. Principal stays unchanged for these interest-only structures; deferred interest is tracked separately.</p>
@@ -1103,70 +947,14 @@ function LoanWorkspace() {
                   </>}
                 </div>
               </fieldset>
-            </div>
 
-            <div className="action-bar">
-              <button
-                className="save-btn"
-                onClick={handleSave}
-                disabled={saveStatus === "saving"}
-              >
-                {saveStatus === "saving"
-                  ? "Saving…"
-                  : saveStatus === "saved"
-                  ? "Saved ✓"
-                  : "Save"}
-              </button>
-              <button
-                className="generate-btn"
-                onClick={handleGenerate}
-                disabled={genStatus === "generating"}
-              >
-                {genStatus === "generating" ? "Generating…" : "Generate documents"}
-              </button>
-              <button
-                className="lender-inst-btn"
-                onClick={handleGenerateLenderInstructions}
-                disabled={lenderInstStatus === "generating"}
-              >
-                {lenderInstStatus === "generating"
-                  ? "Generating…"
-                  : "Generate Servicing Agreement"}
-              </button>
-              <button
-                className="lender-inst-btn"
-                onClick={handleGenerateDisclosure}
-                disabled={disclosureStatus === "generating"}
-              >
-                {disclosureStatus === "generating"
-                  ? "Generating…"
-                  : "Generate Lender Disclosures"}
-              </button>
-              <span className="submit-note">
-                "Generate documents" downloads the full .zip package.
-                "Generate Servicing Agreement" downloads the standalone servicing
-                document (California) or agreement (Florida) as a Word file.
-                "Generate Lender Disclosures" downloads the California lender disclosure statement.
-              </span>
+                </div>}
+              </section></div>
             </div>
-
-            {genStatus === "error" && (
-              <p className="error-msg" role="alert">
-                {errorMsg}
-              </p>
-            )}
-            {lenderInstStatus === "error" && (
-              <p className="error-msg" role="alert">
-                {lenderInstErrorMsg}
-              </p>
-            )}
-            {disclosureStatus === "error" && (
-              <p className="error-msg" role="alert">
-                {disclosureErrorMsg}
-              </p>
-            )}
-          </>
-        )}
+            <div className="zd-actions"><button className="zd-button primary" disabled={saveStatus==="saving"} onClick={handleSave}>{saveStatus==="saving"?"Saving...":saveStatus==="saved"?"Saved ✓":"Save Loan"}</button><button className="zd-button" disabled={genStatus==="generating"} onClick={handleGenerate}>{genStatus==="generating"?"Generating...":"Generate Documents"}</button><button className="zd-button" disabled={lenderInstStatus==="generating"} onClick={handleGenerateLenderInstructions}>{lenderInstStatus==="generating"?"Generating...":"Servicing Agreement"}</button><button className="zd-button" disabled={disclosureStatus==="generating"} onClick={handleGenerateDisclosure}>{disclosureStatus==="generating"?"Generating...":"Lender Disclosures"}</button></div>
+            {genStatus==="error"&&<p className="error-msg" role="alert">{errorMsg}</p>}{lenderInstStatus==="error"&&<p className="error-msg" role="alert">{lenderInstErrorMsg}</p>}{disclosureStatus==="error"&&<p className="error-msg" role="alert">{disclosureErrorMsg}</p>}
+          </>}
+        </div>
       </main>
     </div>
   );
@@ -2987,11 +2775,7 @@ export default function App() {
 
   return (
     <div>
-      <div style={{ position: "fixed", right: 18, top: 14, zIndex: 9999, display: "flex", gap: 10 }}>
-        <button type="button" onClick={goHome} style={{ border: "1px solid #d6dbe4", borderRadius: 999, padding: "8px 13px", background: "white", cursor: "pointer", fontWeight: 700 }}>← ZapDocs home</button>
-        <button type="button" onClick={async () => { await supabase.auth.signOut(); }} style={{ border: "1px solid #d6dbe4", borderRadius: 999, padding: "8px 13px", background: "white", cursor: "pointer", fontWeight: 700 }}>Sign out</button>
-      </div>
-      <LoanWorkspace key={session.user.id} />
+      <LoanWorkspace key={session.user.id} onHome={goHome} onSignOut={async()=>{await supabase.auth.signOut();}} />
     </div>
   );
 }
