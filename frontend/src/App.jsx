@@ -61,9 +61,6 @@ const FIELD_GROUPS = [
       ["INTEREST_RATE", "Interest Rate (%)"],
       ["MONTHLY_PAYMENT", "Regular Monthly Interest Payment ($)"],
       ["NUMBER_OF_PAYMENTS", "Number of Payments (Note table)"],
-      ["NEG_AM_MONTHS", "Reduced-payment months (for deferred interest)"],
-      ["NEG_AM_PAYMENT_RATE", "Reduced payment rate (%) (e.g. 6)"],
-      ["DEFERRED_INTEREST", "Deferred interest override ($; optional)"],
       ["LOAN_TERM", "Loan Term (e.g. 36 months)"],
       ["BALLOON_PAYMENT", "Balloon Payment ($)"],
       ["COMMISSION", "Commission ($)"],
@@ -105,7 +102,7 @@ const FIELD_GROUPS = [
   {
     name: "Property",
     fields: [
-      ["PROPERTY_ADDRESS", "Property Address (full)"],
+      ["PROPERTY_ADDRESS", "Property Address"],
       ["PROPERTY_CITY", "Property City"],
       ["PROPERTY_STATE", "Property State"],
       ["PROPERTY_ZIP", "Property Zip"],
@@ -134,7 +131,7 @@ const FIELD_GROUPS = [
     name: "Borrower",
     fields: [
       ["VESTING", "Vesting / Borrower Entity Name"],
-      ["MAILING_ADDRESS", "Borrower Mailing Address"],
+      ["MAILING_ADDRESS", "Borrower Mailing Address (in full)"],
       ["BORROWER_1", "Borrower 1 Name"],
       ["BORROWER_2", "Borrower 2 Name (optional)"],
       ["TAX_ID", "Borrower Tax ID / SSN"],
@@ -148,9 +145,9 @@ const FIELD_GROUPS = [
   {
     name: "Lender",
     fields: [
-      ["LENDER", "Lender (as it appears in body text)"],
-      ["LENDER_NAME", "Lender Name (short form)"],
-      ["LENDER_ADDRESS", "Lender Address"],
+      ["LENDER", "Lender Vesting"],
+      ["LENDER_NAME", "Lender Name or Individual"],
+      ["LENDER_ADDRESS", "Lender Mailing Address (in full)"],
       ["LENDER_OWNERSHIP", "Lender Ownership % (e.g. 57.16%)"],
     ],
   },
@@ -195,8 +192,7 @@ function emptyFields() {
   ALL_FIELDS.forEach((name) => (obj[name] = ""));
   obj.STATE = "FL";
   obj.PAYMENT_STRUCTURE = "interest_only";
-  obj.NEG_AM_MONTHS = "6";
-  obj.NEG_AM_PAYMENT_RATE = "6";
+  obj.DEFERRED_INTEREST = ""; // No hidden manual override: calculate from payment tiers.
   obj.PAYMENT_ROWS = [emptyPaymentRow()];
   return obj;
 }
@@ -285,14 +281,6 @@ function simulateSchedule(fields) {
       RATE: String(paymentRate), AMOUNT: tierPayment.toFixed(2) });
     monthOffset += count;
     if (monthOffset > 600) return { valid: false, message: "Schedule exceeds 600 installments.", rows: [], installments: [] };
-  }
-  const explicitDeferred = String(fields.DEFERRED_INTEREST ?? "").trim();
-  if (structure === "neg_am" && explicitDeferred) {
-    const override = numberValue(explicitDeferred);
-    if (!Number.isFinite(override) || override < 0) {
-      return { valid: false, message: "Deferred interest override must be a nonnegative number.", rows: [], installments: [] };
-    }
-    deferredInterest = cents(override);
   }
   const maturity = dateValue(fields.MATURITY_DATE);
   const lastDate = installments.length ? dateValue(installments[installments.length - 1].date) : null;
@@ -404,14 +392,26 @@ function LoanWorkspace({ onHome, onSignOut }) {
     const structure = fields.PAYMENT_STRUCTURE || "interest_only";
     const newRows = [];
     if (structure === "neg_am") {
-      const reducedMonths = numberValue(fields.NEG_AM_MONTHS);
-      const reducedRate = numberValue(fields.NEG_AM_PAYMENT_RATE);
+      // Reduced-payment terms come from the first Payment Schedule tier,
+      // not from a second set of redundant loan-info fields.
+      const firstTier = paymentRows.find((row) =>
+        Object.values(row || {}).some((value) => String(value ?? "").trim())
+      );
+      const reducedMonths = numberValue(firstTier?.COUNT);
+      const reducedRate = numberValue(firstTier?.RATE);
       if (!Number.isInteger(reducedMonths) || reducedMonths < 1 || reducedMonths >= monthCount ||
-          !(reducedRate >= 0) || reducedRate > rate) {
-        setWorkspaceError("Reduced months must be between 1 and the loan's installment count minus 1; reduced payment rate must be 0 through the contractual rate."); return;
+          !(reducedRate >= 0) || reducedRate >= rate) {
+        setWorkspaceError("For deferred interest, enter the first reduced-payment tier's number of payments and rate in Payment Schedule (for example, 6 payments at 6%), then select Auto-fill.");
+        return;
+      }
+      const reducedAmount = String(firstTier?.AMOUNT ?? "").trim();
+      const parsedAmount = reducedAmount ? numberValue(reducedAmount) : NaN;
+      if (reducedAmount && (!Number.isFinite(parsedAmount) || parsedAmount < 0)) {
+        setWorkspaceError("Enter a valid reduced payment amount, or leave it blank to calculate from the reduced rate.");
+        return;
       }
       newRows.push({ COUNT: String(reducedMonths), START: formatDate(first), DESCRIPTION: "",
-        RATE: String(reducedRate), AMOUNT: (Math.round(principal * reducedRate / 12) / 100).toFixed(2) });
+        RATE: String(reducedRate), AMOUNT: reducedAmount ? parsedAmount.toFixed(2) : (Math.round(principal * reducedRate / 12) / 100).toFixed(2) });
       newRows.push({ COUNT: String(monthCount - reducedMonths), START: formatDate(nextMonth(first, reducedMonths)), DESCRIPTION: "",
         RATE: String(rate), AMOUNT: (Math.round(principal * rate / 12) / 100).toFixed(2) });
     } else {
@@ -456,6 +456,7 @@ function LoanWorkspace({ onHome, onSignOut }) {
       return;
     }
     const incoming = { ...emptyFields(), ...data.fields };
+    incoming.DEFERRED_INTEREST = ""; // Retired override; prevent old saved values from controlling payoff preview.
     if (!data.fields?.PAYMENT_STRUCTURE) {
       incoming.PAYMENT_STRUCTURE = (data.fields?.PREPAID_NUMBER_MONTHS || data.fields?.PREPAID_PAYMENTS) ? "prepaid" : "interest_only";
     }
@@ -553,7 +554,7 @@ function LoanWorkspace({ onHome, onSignOut }) {
     try {
       const data = await apiJson(`/api/loans/${activeId}`, {
         method: "PUT",
-        body: JSON.stringify({ fields: { ...fields, PAYMENT_ROWS: schedule.valid ? schedule.rows : paymentRows }, label: labelInput }),
+        body: JSON.stringify({ fields: { ...fields, DEFERRED_INTEREST: "", PAYMENT_ROWS: schedule.valid ? schedule.rows : paymentRows }, label: labelInput }),
       });
       setLabelInput(data.label);
       await refreshList();
@@ -571,7 +572,7 @@ function LoanWorkspace({ onHome, onSignOut }) {
     // so the downloaded doc(s) always match what's on screen.
     await apiJson(`/api/loans/${activeId}`, {
       method: "PUT",
-      body: JSON.stringify({ fields: { ...fields, PAYMENT_ROWS: schedule.valid ? schedule.rows : paymentRows }, label: labelInput }),
+      body: JSON.stringify({ fields: { ...fields, DEFERRED_INTEREST: "", PAYMENT_ROWS: schedule.valid ? schedule.rows : paymentRows }, label: labelInput }),
     });
     await refreshList();
   }
@@ -822,7 +823,7 @@ function LoanWorkspace({ onHome, onSignOut }) {
                   ))}
                 </div>
                 {fields.PAYMENT_STRUCTURE === "neg_am" && (
-                  <p className="pay-note" style={{ marginTop: 12 }}>For six reduced payments at 6% on a 12% contractual loan, set reduced-payment months to 6 and reduced-payment rate to 6 above, then choose Auto-fill. The unpaid interest will be shown separately and not added to principal.</p>
+                  <p className="pay-note" style={{ marginTop: 12 }}>For deferred interest, enter the reduced-payment tier directly in the Payment Schedule below (e.g., 6 payments at 6%), then use Auto-fill to create the remaining payments at the contractual rate. Unpaid interest is tracked separately, not added to principal.</p>
                 )}
                 {fields.PAYMENT_STRUCTURE === "prepaid" && (
                   <p className="pay-note" style={{ marginTop: 12 }}>Complete the prepaid-month and amount fields under the California Note or Florida Prepayment sections. The generated Note uses the prepaid clause.</p>
