@@ -125,6 +125,10 @@ const FIELD_GROUPS = [
       ["BROKERAGE_NAME", "Brokerage Name (recording and footer)"],
       ["BROKERAGE_ADDRESS", "Brokerage Street Address"],
       ["BROKERAGE_CITYSTATEZIP", "Brokerage City, State ZIP"],
+      ["BROKERAGE_PHONE", "Brokerage Phone"],
+      ["BROKERAGE_FAX", "Brokerage Fax"],
+      ["NMLS", "NMLS License Number"],
+      ["BROKER_REPRESENTATIVE", "Broker Representative (Name)"],
     ],
   },
   {
@@ -304,7 +308,7 @@ const PROFILE_CATEGORIES = [
   { key: "lender", label: "Lender", fields: ["LENDER", "LENDER_NAME", "LENDER_ADDRESS", "LENDER_OWNERSHIP"] },
   { key: "servicer", label: "Servicer", fields: ["SERVICER", "SERVICER_ADDRESS"] },
   { key: "escrow", label: "Escrow holder", fields: ["ESCROW_NAME", "ESCROW_ADDRESS"] },
-  { key: "brokerage", label: "Brokerage", fields: ["BROKERAGE", "BROKERAGE_NAME", "BROKERAGE_ADDRESS", "BROKERAGE_CITYSTATEZIP", "DRE"] },
+  { key: "brokerage", label: "Brokerage", fields: ["BROKERAGE", "BROKERAGE_NAME", "BROKERAGE_ADDRESS", "BROKERAGE_CITYSTATEZIP", "BROKERAGE_PHONE", "BROKERAGE_FAX", "NMLS", "BROKER_REPRESENTATIVE", "DRE"] },
 ];
 
 function LoanWorkspace({ onHome, onSignOut }) {
