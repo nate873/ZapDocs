@@ -117,12 +117,11 @@ const FIELD_GROUPS = [
     ],
   },
   {
-    name: "California Deed of Trust",
-    states: ["CA"],
+    name: "Brokerage",
     fields: [
-      ["BROKERAGE", "Brokerage (California boiler)"],
+      ["BROKERAGE", "Brokerage / Broker Legal Name"],
       ["DRE", "California DRE License Number"],
-      ["BROKERAGE_NAME", "Brokerage Name (recording and footer)"],
+      ["BROKERAGE_NAME", "Brokerage Name (Florida & California recording information)"],
       ["BROKERAGE_ADDRESS", "Brokerage Street Address"],
       ["BROKERAGE_CITYSTATEZIP", "Brokerage City, State ZIP"],
       ["BROKERAGE_PHONE", "Brokerage Phone"],
@@ -153,6 +152,7 @@ const FIELD_GROUPS = [
       ["LENDER_NAME", "Lender Name or Individual"],
       ["LENDER_ADDRESS", "Lender Mailing Address (in full)"],
       ["LENDER_OWNERSHIP", "Lender Ownership % (e.g. 57.16%)"],
+      ["LENDER_ENTITY_DESCRIPTION", "Lender Entity Description (if applicable)"],
     ],
   },
   {
@@ -708,7 +708,7 @@ function LoanWorkspace({ onHome, onSignOut }) {
     {name:"Lender", fields: FIELD_GROUPS[7].fields, profile:"lender"},
     {name:"Trustee", states:["CA"], fields: FIELD_GROUPS[4].fields.filter(([k])=>["TRUSTEE","TRUSTEE_ADDRESS"].includes(k)), profile:"trustee"},
     {name:"Servicer", fields: FIELD_GROUPS[8].fields, profile:"servicer"},
-    {name:"Brokerage", states:["CA"], fields: FIELD_GROUPS[5].fields, profile:"brokerage"},
+    {name:"Brokerage", fields: FIELD_GROUPS[5].fields.filter(([key]) => fields.STATE === "CA" || key !== "DRE"), profile:"brokerage"},
     {name:"Escrow", fields: FIELD_GROUPS[9].fields.filter(([k])=>["ESCROW_NAME","ESCROW_ADDRESS"].includes(k)), profile:"escrow"},
     {name:"Disclosures", states:["CA"], fields: FIELD_GROUPS[9].fields.filter(([k])=>!["ESCROW_NAME","ESCROW_ADDRESS"].includes(k))}
   ];
