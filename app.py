@@ -263,7 +263,7 @@ ALL_FIELDS = [
 
     "BROKERAGE_NAME", "BROKERAGE_ADDRESS", "BROKERAGE_CITYSTATEZIP", "TRUSTEE_ADDRESS",
 
-    "BROKERAGE_PHONE", "BROKERAGE_FAX", "BROKER_REPRESENTATIVE", "NMLS",
+    "BROKERAGE_PHONE", "BROKERAGE_FAX", "BROKER_REPRESENTATIVE", "BROKERAGE_REP", "NMLS",
 
     "SERVICER", "SERVICER_ADDRESS",
 
@@ -1451,17 +1451,18 @@ def build_context(fields):
 
     context["AGREEMENT_LOAN_TERMS"] = build_agreement_loan_terms(fields, payment_rows)
 
-    # Brokerage fields are shared by Florida and California. Florida's Mortgage
-    # uses BROKERAGE_NAME / ADDRESS / CITYSTATEZIP in its recording block.
-    # Preserve specifically entered values, with the legacy BROKERAGE field as
-    # a fallback for loans saved before the current Brokerage form was added.
+    # Florida and California use the same brokerage data.
     brokerage_name = context.get("BROKERAGE_NAME") or context.get("BROKERAGE", "")
     context["BROKERAGE_NAME"] = brokerage_name
     context["BROKERAGE"] = context.get("BROKERAGE") or brokerage_name
-    context["BROKERAGE_REPRESENTATIVE"] = context.get("BROKER_REPRESENTATIVE", "")
 
-    # Compatibility aliases used by the updated Florida full-set template.
-    # Do not guess an entity description or other legally significant facts.
+    # New broker-name placeholder for Word footers; retain legacy loan data.
+    broker_rep = (context.get("BROKERAGE_REP")
+                  or context.get("BROKER_REPRESENTATIVE") or "")
+    context["BROKERAGE_REP"] = broker_rep
+    context["BROKERAGE_REPRESENTATIVE"] = broker_rep
+
+    # Compatibility with latest Florida templates.
     context["DOCUMENT_DATE"] = context.get("NOTE_DATE", "")
     context["VENUE_COUNTY"] = context.get("COUNTY", "")
     context["BORROWER_NAME"] = context.get("BORROWER_1") or context.get("VESTING", "")
@@ -1574,8 +1575,11 @@ def build_context(fields):
     # Put each {%p ... %} tag on its own paragraph in Word.
 
     has_second_borrower = bool(
+
         str(fields.get("SIGNATURE_FOOTER_2", "") or "").strip()
+
         or str(fields.get("BORROWER_2", "") or "").strip()
+
     )
 
     context["HAS_SECOND_BORROWER"] = has_second_borrower

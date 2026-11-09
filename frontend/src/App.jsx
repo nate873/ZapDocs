@@ -120,14 +120,15 @@ const FIELD_GROUPS = [
     name: "Brokerage",
     fields: [
       ["BROKERAGE", "Brokerage / Broker Legal Name"],
+      ["BROKERAGE_REP", "Broker Name (footer)"],
+      ["NMLS", "NMLS License Number"],
       ["DRE", "California DRE License Number"],
       ["BROKERAGE_NAME", "Brokerage Name (Florida & California recording information)"],
       ["BROKERAGE_ADDRESS", "Brokerage Street Address"],
       ["BROKERAGE_CITYSTATEZIP", "Brokerage City, State ZIP"],
       ["BROKERAGE_PHONE", "Brokerage Phone"],
       ["BROKERAGE_FAX", "Brokerage Fax"],
-      ["NMLS", "NMLS License Number"],
-      ["BROKER_REPRESENTATIVE", "Broker Representative (Name)"],
+      ["BROKER_REPRESENTATIVE", "Broker Representative (legacy / optional)"],
     ],
   },
   {
@@ -308,7 +309,7 @@ const PROFILE_CATEGORIES = [
   { key: "lender", label: "Lender", fields: ["LENDER", "LENDER_NAME", "LENDER_ADDRESS", "LENDER_OWNERSHIP"] },
   { key: "servicer", label: "Servicer", fields: ["SERVICER", "SERVICER_ADDRESS"] },
   { key: "escrow", label: "Escrow holder", fields: ["ESCROW_NAME", "ESCROW_ADDRESS"] },
-  { key: "brokerage", label: "Brokerage", fields: ["BROKERAGE", "BROKERAGE_NAME", "BROKERAGE_ADDRESS", "BROKERAGE_CITYSTATEZIP", "BROKERAGE_PHONE", "BROKERAGE_FAX", "NMLS", "BROKER_REPRESENTATIVE", "DRE"] },
+  { key: "brokerage", label: "Brokerage", fields: ["BROKERAGE", "BROKERAGE_NAME", "BROKERAGE_ADDRESS", "BROKERAGE_CITYSTATEZIP", "BROKERAGE_PHONE", "BROKERAGE_FAX", "NMLS", "BROKERAGE_REP", "BROKER_REPRESENTATIVE", "DRE"] },
 ];
 
 function LoanWorkspace({ onHome, onSignOut }) {
