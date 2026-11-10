@@ -257,6 +257,7 @@ ALL_FIELDS = [
     "SIGNATURE_FOOTER_2", "SIGNATURE_TITLE_2",
 
     "LENDER", "LENDER_NAME", "LENDER_ADDRESS", "LENDER_OWNERSHIP",
+
     "LENDER_ENTITY_DESCRIPTION",
 
     "BROKERAGE", "DRE", "TAX_ID_2",
@@ -709,7 +710,7 @@ def safe_filename_part(value, fallback="file"):
 
     value = str(value or "").strip()
 
-    value = re.sub(r'[<>:"/****\\\\\\****|?*]+', "_", value)
+    value = re.sub(r'[<>:"/******\\\\\\\\\\\******|?*]+', "_", value)
 
     value = re.sub(r"\s+", "_", value).strip(" ._")
 
@@ -749,9 +750,9 @@ def find_libreoffice_executable():
 
     candidates.extend([
 
-        r"C:****\P****rogram File&#x73;****\L****ibreOffic&#x65;****\p****rogram\soffice.exe",
+        r"C:******\P******rogram File&#x73;******\L******ibreOffic&#x65;******\p******rogram\soffice.exe",
 
-        r"C:****\P****rogram Files (x86)****\L****ibreOffic&#x65;****\p****rogram\soffice.exe",
+        r"C:******\P******rogram Files (x86)******\L******ibreOffic&#x65;******\p******rogram\soffice.exe",
 
         "/Applications/LibreOffice.app/Contents/MacOS/soffice",
 
@@ -1253,8 +1254,6 @@ def build_agreement_loan_terms(fields, note_rows):
 
     """Keep California procure-lender agreement synchronized with Note schedule.
 
-
-
     Uses the exact rendered Note tiers rather than recalculating independently.
 
     The stated balloon is never assumed to include/exclude deferred interest.
@@ -1265,8 +1264,6 @@ def build_agreement_loan_terms(fields, note_rows):
 
         return ""
 
-
-
     principal = _decimal_amount(fields.get("LOAN_AMOUNT"))
 
     balloon = _decimal_amount(fields.get("BALLOON_PAYMENT"))
@@ -1276,8 +1273,6 @@ def build_agreement_loan_terms(fields, note_rows):
     if principal is None or principal <= 0 or balloon is None or maturity is None:
 
         raise ValueError("California agreement requires loan amount, balloon and maturity date.")
-
-
 
     lines = [
 
@@ -1367,8 +1362,6 @@ def build_agreement_loan_terms(fields, note_rows):
 
     return "\n\n".join(lines)
 
-
-
 def build_context(fields):
 
     context = {}
@@ -1451,21 +1444,30 @@ def build_context(fields):
 
     context["AGREEMENT_LOAN_TERMS"] = build_agreement_loan_terms(fields, payment_rows)
 
-    # Florida and California use the same brokerage data.
+    # Brokerage applies to both Florida and California documents.
+    # Backwards compatibility: older loans may use BROKERAGE instead of BROKERAGE_NAME.
     brokerage_name = context.get("BROKERAGE_NAME") or context.get("BROKERAGE", "")
     context["BROKERAGE_NAME"] = brokerage_name
     context["BROKERAGE"] = context.get("BROKERAGE") or brokerage_name
 
-    # New broker-name placeholder for Word footers; retain legacy loan data.
-    broker_rep = (context.get("BROKERAGE_REP")
-                  or context.get("BROKER_REPRESENTATIVE") or "")
+    # Single broker representative value for document body and Word footers.
+    broker_rep = context.get("BROKERAGE_REP") or context.get("BROKER_REPRESENTATIVE") or ""
     context["BROKERAGE_REP"] = broker_rep
-    context["BROKERAGE_REPRESENTATIVE"] = broker_rep
+    context["BROKER_REPRESENTATIVE"] = broker_rep
+
+    # Keep NMLS for both states. DRE applies only to California, but do not
+    # delete the saved DRE value when someone toggles states in the editor.
+    context["NMLS"] = context.get("NMLS", "")
+    context["DRE"] = context.get("DRE", "")
 
     # Compatibility with latest Florida templates.
+
     context["DOCUMENT_DATE"] = context.get("NOTE_DATE", "")
+
     context["VENUE_COUNTY"] = context.get("COUNTY", "")
+
     context["BORROWER_NAME"] = context.get("BORROWER_1") or context.get("VESTING", "")
+
     context["LENDER_ENTITY_DESCRIPTION"] = str(fields.get("LENDER_ENTITY_DESCRIPTION") or "").strip()
 
     structure = payment_structure_for(fields)

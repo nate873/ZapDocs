@@ -709,7 +709,7 @@ function LoanWorkspace({ onHome, onSignOut }) {
     {name:"Lender", fields: FIELD_GROUPS[7].fields, profile:"lender"},
     {name:"Trustee", states:["CA"], fields: FIELD_GROUPS[4].fields.filter(([k])=>["TRUSTEE","TRUSTEE_ADDRESS"].includes(k)), profile:"trustee"},
     {name:"Servicer", fields: FIELD_GROUPS[8].fields, profile:"servicer"},
-    {name:"Brokerage", fields: FIELD_GROUPS[5].fields.filter(([key]) => fields.STATE === "CA" || key !== "DRE"), profile:"brokerage"},
+    {name:"Brokerage", states:["FL","CA"], fields: FIELD_GROUPS[5].fields.filter(([key]) => fields.STATE === "CA" || key !== "DRE"), profile:"brokerage"},
     {name:"Escrow", fields: FIELD_GROUPS[9].fields.filter(([k])=>["ESCROW_NAME","ESCROW_ADDRESS"].includes(k)), profile:"escrow"},
     {name:"Disclosures", states:["CA"], fields: FIELD_GROUPS[9].fields.filter(([k])=>!["ESCROW_NAME","ESCROW_ADDRESS"].includes(k))}
   ];
