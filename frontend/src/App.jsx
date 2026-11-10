@@ -81,6 +81,7 @@ const FIELD_GROUPS = [
   {
     name: "Prepayment (FL Note, Sec. 5)",
     fields: [
+      ["PREPAID_NUMBER_MONTHS", "Number of Prepaid Months"],
       ["PREPAID_PAYMENTS", "Prepaid Payments Total ($)"],
       ["FIRST_PREPAID_MONTH", "First Prepaid Month (e.g. September 2026)"],
       ["LAST_PREPAID_MONTH", "Last Prepaid Month (e.g. February 2027)"],
@@ -811,7 +812,7 @@ function LoanWorkspace({ onHome, onSignOut }) {
                   // Keep distinct fields in their original backing state; format examples are placeholders, not forced values.
                   const isCA=fields.STATE==="CA";
                   if(selectedGroup.name==="Payment Terms" && isCA && ["FIRST_PREPAID_MONTH","LAST_PREPAID_MONTH","FIRST_PAYMENT_DUE"].includes(key))return null;
-                  if(selectedGroup.name==="Payment Terms" && !isCA && ["FIRST_PREPAID","LAST_PREPAID","FIRST_PAYMENT_DATE","PREPAYMENT_PENALTY","PREPAID_NUMBER_MONTHS"].includes(key))return null;
+                  if(selectedGroup.name==="Payment Terms" && !isCA && ["FIRST_PREPAID","LAST_PREPAID","FIRST_PAYMENT_DATE","PREPAYMENT_PENALTY"].includes(key))return null;
                   if(selectedGroup.name==="Loan Details" && key==="SERVICING_DATE" && fields.STATE!=="CA")return null;
                   return <div className="zd-field" key={key}><label className="zd-field-label" htmlFor={`zd-${key}`}>{label.replace(/ \(e\.g\..*\)/, "")}</label><input id={`zd-${key}`} autoComplete="off" value={fields[key]||""} onChange={e=>handleChange(key,e.target.value)} placeholder={label.match(/e\.g\.[^)]*/)?.[0]?.replace("e.g.","Example:")||""} /></div>;
                 })}</div>
