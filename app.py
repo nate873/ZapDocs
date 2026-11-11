@@ -710,7 +710,7 @@ def safe_filename_part(value, fallback="file"):
 
     value = str(value or "").strip()
 
-    value = re.sub(r'[<>:"/******\\\\\\\\\\\******|?*]+', "_", value)
+    value = re.sub(r'[<>:"/********\\\\\\\\\\\\\\\\\\\\\\********|?*]+', "_", value)
 
     value = re.sub(r"\s+", "_", value).strip(" ._")
 
@@ -750,9 +750,9 @@ def find_libreoffice_executable():
 
     candidates.extend([
 
-        r"C:******\P******rogram File&#x73;******\L******ibreOffic&#x65;******\p******rogram\soffice.exe",
+        r"C:********\P********rogram Files********\L********ibreOffice********\p********rogram\soffice.exe",
 
-        r"C:******\P******rogram Files (x86)******\L******ibreOffic&#x65;******\p******rogram\soffice.exe",
+        r"C:********\P********rogram Files (x86)********\L********ibreOffice********\p********rogram\soffice.exe",
 
         "/Applications/LibreOffice.app/Contents/MacOS/soffice",
 
@@ -1445,19 +1445,29 @@ def build_context(fields):
     context["AGREEMENT_LOAN_TERMS"] = build_agreement_loan_terms(fields, payment_rows)
 
     # Brokerage applies to both Florida and California documents.
+
     # Backwards compatibility: older loans may use BROKERAGE instead of BROKERAGE_NAME.
+
     brokerage_name = context.get("BROKERAGE_NAME") or context.get("BROKERAGE", "")
+
     context["BROKERAGE_NAME"] = brokerage_name
+
     context["BROKERAGE"] = context.get("BROKERAGE") or brokerage_name
 
     # Single broker representative value for document body and Word footers.
+
     broker_rep = context.get("BROKERAGE_REP") or context.get("BROKER_REPRESENTATIVE") or ""
+
     context["BROKERAGE_REP"] = broker_rep
+
     context["BROKER_REPRESENTATIVE"] = broker_rep
 
     # Keep NMLS for both states. DRE applies only to California, but do not
+
     # delete the saved DRE value when someone toggles states in the editor.
+
     context["NMLS"] = context.get("NMLS", "")
+
     context["DRE"] = context.get("DRE", "")
 
     # Compatibility with latest Florida templates.
@@ -2030,7 +2040,7 @@ def generate(loan_id):
 
     CA: Note, Deed of Trust, Boiler, Oral Disclosure only.
 
-    FL: keep the configured Florida templates, but output DOCX files only.
+    FL: generate only the Florida Full Set template as a single DOCX in the ZIP.
 
     Servicing Agreement and Lender Disclosure remain on their separate endpoints.
 
@@ -2139,6 +2149,8 @@ def generate_lender_instructions(loan_id):
         return jsonify({"error": "Loan not found"}), 404
 
     fields = record.get("fields") or {}
+    if str(fields.get("STATE") or "FL").strip().upper() != "CA":
+        return jsonify({"error": "Florida only supports Full Set generation."}), 400
 
     context = build_context(fields)
 
@@ -2277,6 +2289,8 @@ def generate_key_provisions(loan_id):
         return jsonify({"error": "Loan not found"}), 404
 
     fields = record.get("fields") or {}
+    if str(fields.get("STATE") or "FL").strip().upper() != "CA":
+        return jsonify({"error": "Florida only supports Full Set generation."}), 400
 
     context = build_context(fields)
 
