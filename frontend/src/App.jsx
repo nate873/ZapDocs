@@ -212,6 +212,11 @@ function numberValue(value) {
 function dateValue(value) {
   const str = String(value ?? "").trim();
   if (!str) return null;
+  const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) {
+    const d = new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3]));
+    return d.getUTCFullYear() === +iso[1] && d.getUTCMonth() === +iso[2] - 1 && d.getUTCDate() === +iso[3] ? d : null;
+  }
   const m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (m) {
     const d = new Date(Date.UTC(+m[3], +m[1] - 1, +m[2]));
@@ -233,6 +238,16 @@ function formatDate(date) {
 function formatMoney(value) {
   return Number.isFinite(value) ? value.toLocaleString("en-US", { style: "currency", currency: "USD" }) : "—";
 }
+function dateForNative(value) {
+  const d = dateValue(value);
+  return d ? `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}` : "";
+}
+function monthlyInterestEstimate(fields) {
+  const principal = numberValue(fields.LOAN_AMOUNT);
+  const rate = numberValue(fields.INTEREST_RATE);
+  return principal > 0 && rate >= 0 && rate <= 100 ? Math.round((principal * rate / 1200 + Number.EPSILON) * 100) / 100 : null;
+}
+
 function simulateSchedule(fields) {
   const principal = numberValue(fields.LOAN_AMOUNT);
   const contractualRate = numberValue(fields.INTEREST_RATE);
@@ -321,7 +336,8 @@ function LoanWorkspace({ onHome, onSignOut }) {
   const [activeId, setActiveId] = useState(null);
   const [fields, setFields] = useState(emptyFields());
   const [labelInput, setLabelInput] = useState("");
-  const [saveStatus, setSaveStatus] = useState("idle"); // idle | saving | saved | error
+  const [saveStatus, setSaveStatus] = useState("idle");
+  const [showDocumentPreview, setShowDocumentPreview] = useState(false); // idle | saving | saved | error
   const [genStatus, setGenStatus] = useState("idle"); // idle | generating | error
   const [lenderInstStatus, setLenderInstStatus] = useState("idle"); // idle | generating | error
   const [disclosureStatus, setDisclosureStatus] = useState("idle"); // idle | generating | error
@@ -379,6 +395,19 @@ function LoanWorkspace({ onHome, onSignOut }) {
     } catch (err) { setProfileMessage(err.message); }
     finally { setProfilesBusy(false); }
   }
+  function calculateRegularPayment() {
+    const estimate = monthlyInterestEstimate(fields);
+    if (estimate === null) {
+      setWorkspaceError("Enter a valid principal and annual interest rate first.");
+      return;
+    }
+    const current = String(fields.MONTHLY_PAYMENT || "").trim();
+    if (current && Math.abs(numberValue(current) - estimate) > 0.005 &&
+        !window.confirm(`Replace the entered monthly payment (${current}) with ${formatMoney(estimate)}? This uses principal × annual rate ÷ 12 and does not change payment tiers or the balloon.`)) return;
+    setFields(prev => ({...prev, MONTHLY_PAYMENT: estimate.toFixed(2)}));
+    setWorkspaceError("");
+  }
+
   function autoFillSchedule() {
     const principal = numberValue(fields.LOAN_AMOUNT), rate = numberValue(fields.INTEREST_RATE);
     const first = dateValue(fields.FIRST_PAYMENT) || dateValue(fields.FIRST_PAYMENT_DATE) || dateValue(fields.FIRST_PAYMENT_DUE);
@@ -814,7 +843,11 @@ function LoanWorkspace({ onHome, onSignOut }) {
                   if(selectedGroup.name==="Payment Terms" && isCA && ["FIRST_PREPAID_MONTH","LAST_PREPAID_MONTH","FIRST_PAYMENT_DUE"].includes(key))return null;
                   if(selectedGroup.name==="Payment Terms" && !isCA && ["FIRST_PREPAID","LAST_PREPAID","FIRST_PAYMENT_DATE","PREPAYMENT_PENALTY"].includes(key))return null;
                   if(selectedGroup.name==="Loan Details" && key==="SERVICING_DATE" && fields.STATE!=="CA")return null;
-                  return <div className="zd-field" key={key}><label className="zd-field-label" htmlFor={`zd-${key}`}>{label.replace(/ \(e\.g\..*\)/, "")}</label><input id={`zd-${key}`} autoComplete="off" value={fields[key]||""} onChange={e=>handleChange(key,e.target.value)} placeholder={label.match(/e\.g\.[^)]*/)?.[0]?.replace("e.g.","Example:")||""} /></div>;
+                  return <div className="zd-field" key={key}><label className="zd-field-label" htmlFor={`zd-${key}`}>{label.replace(/ \(e\.g\..*\)/, "")}</label>
+                    {key === "NOTE_DATE" ? <input id={`zd-${key}`} type="date" value={dateForNative(fields[key])} onChange={e=>handleChange(key,e.target.value ? formatDate(dateValue(e.target.value)) : "")} />
+                    : <input id={`zd-${key}`} autoComplete="off" value={fields[key]||""} onChange={e=>handleChange(key,e.target.value)} placeholder={label.match(/e\.g\.[^)]*/)?.[0]?.replace("e.g.","Example:")||""} />}
+                    {key === "MONTHLY_PAYMENT" && <div style={{marginTop:8,display:"flex",gap:9,alignItems:"center",flexWrap:"wrap"}}><button type="button" className="zd-button" onClick={calculateRegularPayment}>Calculate monthly interest</button><span className="zd-hint">Estimate: {monthlyInterestEstimate(fields) === null ? "Enter amount and rate" : formatMoney(monthlyInterestEstimate(fields))} (principal × annual rate ÷ 12)</span></div>}
+                    </div>;
                 })}</div>
                 {selectedGroup.profile && profileControls(selectedGroup.profile)}
                 {selectedGroup.special==="payments" && <div className="zd-pay">
@@ -958,7 +991,18 @@ function LoanWorkspace({ onHome, onSignOut }) {
                 </div>}
               </section></div>
             </div>
-            <div className="zd-actions"><button className="zd-button primary" disabled={saveStatus==="saving"} onClick={handleSave}>{saveStatus==="saving"?"Saving...":saveStatus==="saved"?"Saved ✓":"Save Loan"}</button><button className="zd-button" disabled={genStatus==="generating"} onClick={handleGenerate}>{genStatus==="generating"?"Generating...":"Generate Documents"}</button><button className="zd-button" disabled={lenderInstStatus==="generating"} onClick={handleGenerateLenderInstructions}>{lenderInstStatus==="generating"?"Generating...":"Servicing Agreement"}</button><button className="zd-button" disabled={disclosureStatus==="generating"} onClick={handleGenerateDisclosure}>{disclosureStatus==="generating"?"Generating...":"Lender Disclosures"}</button></div>
+            {showDocumentPreview && <div role="dialog" aria-modal="true" aria-label="Loan terms preview" style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(12,22,48,.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:18}} onClick={()=>setShowDocumentPreview(false)}>
+              <div className="zd-card" onClick={e=>e.stopPropagation()} style={{width:"min(760px,100%)",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 70px rgba(0,0,0,.2)"}}>
+                <div className="zd-toolbar"><div><h2>Document terms preview</h2><p className="zd-hint">Review values before generating. This is a loan-terms preview, not a rendered Word/PDF document.</p></div><button className="zd-button" onClick={()=>setShowDocumentPreview(false)}>Close</button></div>
+                <div className="zd-field-grid" style={{marginTop:16}}>
+                  {[["State",fields.STATE === "FL" ? "Florida — Full Set only" : "California — existing package"],["Loan number",fields.LOAN_NUMBER],["Borrower",fields.VESTING || fields.BORROWER_1],["Lender",fields.LENDER_NAME || fields.LENDER],["Property",[fields.PROPERTY_ADDRESS,fields.PROPERTY_CITY,fields.PROPERTY_STATE,fields.PROPERTY_ZIP].filter(Boolean).join(", ")],["Principal",formatMoney(numberValue(fields.LOAN_AMOUNT))],["Annual rate",fields.INTEREST_RATE ? `${fields.INTEREST_RATE}%` : ""],["Monthly payment (entered)",formatMoney(numberValue(fields.MONTHLY_PAYMENT))],["Monthly interest estimate",monthlyInterestEstimate(fields)===null ? "—" : formatMoney(monthlyInterestEstimate(fields))],["Note date",fields.NOTE_DATE],["First payment",fields.FIRST_PAYMENT],["Maturity",fields.MATURITY_DATE],["Prepaid months",fields.PREPAID_NUMBER_MONTHS],["Prepaid payments",fields.PREPAID_PAYMENTS ? formatMoney(numberValue(fields.PREPAID_PAYMENTS)) : ""],["Balloon (entered)",formatMoney(numberValue(fields.BALLOON_PAYMENT))],["Payment structure",fields.PAYMENT_STRUCTURE]].map(([name,value])=><div key={name} style={{borderBottom:"1px solid #e2e8f2",paddingBottom:9}}><span className="zd-field-label">{name}</span><strong style={{overflowWrap:"anywhere"}}>{value || "Not entered"}</strong></div>)}
+                </div>
+                <div style={{marginTop:18}}><strong>Payment schedule</strong>{schedule.valid ? <><p className="zd-hint">{schedule.installments.length} installments; deferred interest estimate {formatMoney(schedule.deferredInterest)}.</p>{schedule.warnings?.map((w,i)=><p key={i} style={{color:"#a33919",fontSize:12}}>⚠ {w}</p>)}</> : <p style={{color:"#a33919",fontSize:12}}>{schedule.message}</p>}</div>
+                <p className="zd-hint">The calculation assumes monthly interest using principal × annual rate ÷ 12. It does not verify daily accrual, payoff fees, prepayment premiums, or legal compliance. Changes must be saved before generation.</p>
+                <div style={{display:"flex",justifyContent:"flex-end"}}><button className="zd-button primary" onClick={()=>setShowDocumentPreview(false)}>Back to loan</button></div>
+              </div>
+            </div>}
+            <div className="zd-actions"><button className="zd-button primary" disabled={saveStatus==="saving"} onClick={handleSave}>{saveStatus==="saving"?"Saving...":saveStatus==="saved"?"Saved ✓":"Save Loan"}</button><button className="zd-button" onClick={()=>setShowDocumentPreview(true)}>Preview Terms</button><button className="zd-button" disabled={genStatus==="generating"} onClick={handleGenerate}>{genStatus==="generating"?"Generating...":"Generate Documents"}</button><button className="zd-button" disabled={lenderInstStatus==="generating"} onClick={handleGenerateLenderInstructions}>{lenderInstStatus==="generating"?"Generating...":"Servicing Agreement"}</button><button className="zd-button" disabled={disclosureStatus==="generating"} onClick={handleGenerateDisclosure}>{disclosureStatus==="generating"?"Generating...":"Lender Disclosures"}</button></div>
             {genStatus==="error"&&<p className="error-msg" role="alert">{errorMsg}</p>}{lenderInstStatus==="error"&&<p className="error-msg" role="alert">{lenderInstErrorMsg}</p>}{disclosureStatus==="error"&&<p className="error-msg" role="alert">{disclosureErrorMsg}</p>}
           </>}
         </div>
