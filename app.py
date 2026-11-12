@@ -704,13 +704,53 @@ def build_payment_rows(fields):
 
     return rows
 
+def build_payment_schedule_text(fields, payment_rows):
+    """Describe each non-balloon installment tier using the same rows as the Note table.
+
+    This does not recalculate payment amounts or invent a term. A missing or
+    invalid tier fails document generation instead of printing incorrect text.
+    """
+    tiers = []
+    for row in payment_rows:
+        description = str(row.get("DESCRIPTION") or "").strip()
+        if re.search(r"\b(balloon|payoff|maturity)\b", description, re.I):
+            continue
+        if not any(str(row.get(k) or "").strip()
+                   for k in ("COUNT", "START", "AMOUNT", "RATE", "DESCRIPTION")):
+            continue
+
+        count_text = str(row.get("COUNT") or "").strip()
+        if not count_text.isdigit() or int(count_text) <= 0:
+            raise ValueError("Each payment schedule tier must have a positive COUNT.")
+        count = int(count_text)
+        amount = _decimal_amount(row.get("AMOUNT"))
+        if amount is None or amount < 0:
+            raise ValueError("Each payment schedule tier needs a valid AMOUNT.")
+        start = parse_date(row.get("START"))
+        if start is None:
+            raise ValueError("Each payment schedule tier needs a valid START date.")
+
+        count_words = num2words(count).title()
+        label = "month" if count == 1 else "months"
+        tiers.append(
+            f"{count_words} ({count}) {label} of monthly payments of "
+            f"${amount:,.2f} beginning {start:%m/%d/%Y}"
+        )
+
+    if not tiers:
+        return ""
+    if len(tiers) == 1:
+        return "Borrower shall make " + tiers[0] + "."
+    return ("Borrower shall make " + tiers[0] + ", followed by "
+            + ", followed by ".join(tiers[1:]) + ".")
+
 def safe_filename_part(value, fallback="file"):
 
     """Make user/template text safe to use in a Windows/macOS/Linux filename."""
 
     value = str(value or "").strip()
 
-    value = re.sub(r'[<>:"/********\\\\\\\\\\\\\\\\\\\\\\********|?*]+', "_", value)
+    value = re.sub(r'[<>:"/\\|?*]+', "_", value)
 
     value = re.sub(r"\s+", "_", value).strip(" ._")
 
@@ -750,9 +790,9 @@ def find_libreoffice_executable():
 
     candidates.extend([
 
-        r"C:********\P********rogram Files********\L********ibreOffice********\p********rogram\soffice.exe",
+        r"C:**********\P**********rogram Files**********\L**********ibreOffice**********\p**********rogram\soffice.exe",
 
-        r"C:********\P********rogram Files (x86)********\L********ibreOffice********\p********rogram\soffice.exe",
+        r"C:**********\P**********rogram Files (x86)**********\L**********ibreOffice**********\p**********rogram\soffice.exe",
 
         "/Applications/LibreOffice.app/Contents/MacOS/soffice",
 
@@ -1441,6 +1481,7 @@ def build_context(fields):
     payment_rows = build_payment_rows(fields)
 
     context["PAYMENT_ROWS"] = payment_rows
+    context["PAYMENT_SCHEDULE_TEXT"] = build_payment_schedule_text(fields, payment_rows)
 
     context["AGREEMENT_LOAN_TERMS"] = build_agreement_loan_terms(fields, payment_rows)
 
@@ -2149,7 +2190,9 @@ def generate_lender_instructions(loan_id):
         return jsonify({"error": "Loan not found"}), 404
 
     fields = record.get("fields") or {}
+
     if str(fields.get("STATE") or "FL").strip().upper() != "CA":
+
         return jsonify({"error": "Florida only supports Full Set generation."}), 400
 
     context = build_context(fields)
@@ -2289,7 +2332,9 @@ def generate_key_provisions(loan_id):
         return jsonify({"error": "Loan not found"}), 404
 
     fields = record.get("fields") or {}
+
     if str(fields.get("STATE") or "FL").strip().upper() != "CA":
+
         return jsonify({"error": "Florida only supports Full Set generation."}), 400
 
     context = build_context(fields)
