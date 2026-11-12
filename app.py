@@ -705,10 +705,10 @@ def build_payment_rows(fields):
     return rows
 
 def build_payment_schedule_text(fields, payment_rows):
-    """Describe each non-balloon installment tier using the same rows as the Note table.
+    """Create clean Note §2.2 wording from the existing PAYMENT_ROWS.
 
-    This does not recalculate payment amounts or invent a term. A missing or
-    invalid tier fails document generation instead of printing incorrect text.
+    Uses the actual installment amounts, dates and counts; balloon/payoff
+    rows are excluded. Does not invent principal reductions or loan terms.
     """
     tiers = []
     for row in payment_rows:
@@ -720,29 +720,30 @@ def build_payment_schedule_text(fields, payment_rows):
             continue
 
         count_text = str(row.get("COUNT") or "").strip()
-        if not count_text.isdigit() or int(count_text) <= 0:
-            raise ValueError("Each payment schedule tier must have a positive COUNT.")
+        if not count_text.isdigit() or int(count_text) < 1:
+            raise ValueError("Each payment tier must have a positive COUNT.")
         count = int(count_text)
         amount = _decimal_amount(row.get("AMOUNT"))
         if amount is None or amount < 0:
-            raise ValueError("Each payment schedule tier needs a valid AMOUNT.")
+            raise ValueError("Each payment tier must have a valid AMOUNT.")
         start = parse_date(row.get("START"))
         if start is None:
-            raise ValueError("Each payment schedule tier needs a valid START date.")
+            raise ValueError("Each payment tier must have a valid START date.")
 
-        count_words = num2words(count).title()
-        label = "month" if count == 1 else "months"
+        words = num2words(count).title()
+        installment_word = "installment" if count == 1 else "installments"
         tiers.append(
-            f"{count_words} ({count}) {label} of monthly payments of "
-            f"${amount:,.2f} beginning {start:%m/%d/%Y}"
+            f"{words} ({count}) consecutive monthly {installment_word} "
+            f"of ${amount:,.2f} each, commencing on {start:%m/%d/%Y}"
         )
 
     if not tiers:
         return ""
-    if len(tiers) == 1:
-        return "Borrower shall make " + tiers[0] + "."
-    return ("Borrower shall make " + tiers[0] + ", followed by "
-            + ", followed by ".join(tiers[1:]) + ".")
+
+    sentences = [f"Borrower shall make {tiers[0]}."]
+    for tier in tiers[1:]:
+        sentences.append(f"Thereafter, Borrower shall make {tier}.")
+    return " ".join(sentences)
 
 def safe_filename_part(value, fallback="file"):
 
