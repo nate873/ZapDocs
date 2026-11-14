@@ -337,7 +337,12 @@ function LoanWorkspace({ onHome, onSignOut }) {
   const [fields, setFields] = useState(emptyFields());
   const [labelInput, setLabelInput] = useState("");
   const [saveStatus, setSaveStatus] = useState("idle");
-  const [showDocumentPreview, setShowDocumentPreview] = useState(false); // idle | saving | saved | error
+  const [showDocumentPreview, setShowDocumentPreview] = useState(false); // Existing loan-terms preview
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+  const [pdfPreviewStatus, setPdfPreviewStatus] = useState("idle");
+  const [pdfPreviewError, setPdfPreviewError] = useState("");
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState("");
+  const [pdfPreviewDocument, setPdfPreviewDocument] = useState("Note");
   const [genStatus, setGenStatus] = useState("idle"); // idle | generating | error
   const [lenderInstStatus, setLenderInstStatus] = useState("idle"); // idle | generating | error
   const [disclosureStatus, setDisclosureStatus] = useState("idle"); // idle | generating | error
@@ -346,6 +351,11 @@ function LoanWorkspace({ onHome, onSignOut }) {
   const [disclosureErrorMsg, setDisclosureErrorMsg] = useState("");
   const [loadingList, setLoadingList] = useState(true);
   const [workspaceError, setWorkspaceError] = useState("");
+
+  // Blob URLs contain private PDFs in browser memory; release them when changed/unmounted.
+  useEffect(() => {
+    return () => { if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl); };
+  }, [pdfPreviewUrl]);
 
   const paymentRows = Array.isArray(fields.PAYMENT_ROWS) ? fields.PAYMENT_ROWS : [];
   const schedule = simulateSchedule(fields);
@@ -610,6 +620,47 @@ function LoanWorkspace({ onHome, onSignOut }) {
       body: JSON.stringify({ fields: { ...fields, DEFERRED_INTEREST: "", PAYMENT_ROWS: schedule.valid ? schedule.rows : paymentRows }, label: labelInput }),
     });
     await refreshList();
+  }
+
+  function closePdfPreview() {
+    setPdfPreviewOpen(false);
+    setPdfPreviewUrl("");
+    setPdfPreviewError("");
+    setPdfPreviewStatus("idle");
+  }
+
+  async function loadPdfPreview(documentKey) {
+    if (!activeId) return;
+    setPdfPreviewStatus("loading");
+    setPdfPreviewError("");
+    setPdfPreviewUrl("");
+    try {
+      await saveActiveLoan();
+      const res = await authFetch(`/api/loans/${activeId}/preview`, {
+        method: "POST",
+        body: JSON.stringify({ document: documentKey }),
+      });
+      if (!res.ok) {
+        const info = await res.json().catch(() => ({}));
+        throw new Error(info.error || `Document preview failed (${res.status}).`);
+      }
+      const pdfBlob = await res.blob();
+      if (!pdfBlob.size || !res.headers.get("Content-Type")?.includes("application/pdf")) {
+        throw new Error("Server did not return a valid PDF preview.");
+      }
+      setPdfPreviewUrl(URL.createObjectURL(pdfBlob));
+      setPdfPreviewStatus("ready");
+    } catch (err) {
+      setPdfPreviewError(err.message || "Unable to preview the document.");
+      setPdfPreviewStatus("error");
+    }
+  }
+
+  function openPdfPreview() {
+    const key = fields.STATE === "CA" ? "Note" : "Full Set";
+    setPdfPreviewDocument(key);
+    setPdfPreviewOpen(true);
+    loadPdfPreview(key);
   }
 
   async function handleGenerate() {
@@ -1002,7 +1053,29 @@ function LoanWorkspace({ onHome, onSignOut }) {
                 <div style={{display:"flex",justifyContent:"flex-end"}}><button className="zd-button primary" onClick={()=>setShowDocumentPreview(false)}>Back to loan</button></div>
               </div>
             </div>}
-            <div className="zd-actions"><button className="zd-button primary" disabled={saveStatus==="saving"} onClick={handleSave}>{saveStatus==="saving"?"Saving...":saveStatus==="saved"?"Saved ✓":"Save Loan"}</button><button className="zd-button" onClick={()=>setShowDocumentPreview(true)}>Preview Terms</button><button className="zd-button" disabled={genStatus==="generating"} onClick={handleGenerate}>{genStatus==="generating"?"Generating...":"Generate Documents"}</button><button className="zd-button" disabled={lenderInstStatus==="generating"} onClick={handleGenerateLenderInstructions}>{lenderInstStatus==="generating"?"Generating...":"Servicing Agreement"}</button><button className="zd-button" disabled={disclosureStatus==="generating"} onClick={handleGenerateDisclosure}>{disclosureStatus==="generating"?"Generating...":"Lender Disclosures"}</button></div>
+            {pdfPreviewOpen && <div role="dialog" aria-modal="true" aria-label="Rendered document preview"
+              style={{position:"fixed",inset:0,zIndex:1100,background:"rgba(12,22,48,.72)",display:"flex",alignItems:"center",justifyContent:"center",padding:12}}
+              onClick={closePdfPreview}>
+              <div className="zd-card" onClick={e=>e.stopPropagation()}
+                style={{width:"min(1100px,100%)",height:"min(94vh,1000px)",display:"flex",flexDirection:"column",gap:12,overflow:"hidden"}}>
+                <div className="zd-toolbar" style={{flexShrink:0,flexWrap:"wrap",gap:10}}>
+                  <div><h2 style={{margin:0}}>Document preview</h2><p className="zd-hint">Rendered PDF from your saved loan data and Word template. No download required.</p></div>
+                  {fields.STATE === "CA" && <label style={{display:"flex",gap:8,alignItems:"center"}}>Document
+                    <select value={pdfPreviewDocument} disabled={pdfPreviewStatus === "loading"}
+                      onChange={e=>{setPdfPreviewDocument(e.target.value);loadPdfPreview(e.target.value);}}>
+                      {["Note","Deed of Trust","Boiler","Oral Disclosure"].map(k=><option key={k} value={k}>{k}</option>)}
+                    </select></label>}
+                  <button className="zd-button" onClick={closePdfPreview}>Close</button>
+                </div>
+                {pdfPreviewStatus === "loading" && <p role="status">Generating PDF preview…</p>}
+                {pdfPreviewStatus === "error" && <div role="alert"><p className="error-msg">{pdfPreviewError}</p><button className="zd-button" onClick={()=>loadPdfPreview(pdfPreviewDocument)}>Retry</button></div>}
+                {pdfPreviewStatus === "ready" && pdfPreviewUrl && <iframe
+                  title={`${pdfPreviewDocument} PDF preview`} src={`${pdfPreviewUrl}#toolbar=1`}
+                  style={{width:"100%",flex:1,minHeight:0,border:"1px solid #e2e8f0",borderRadius:8}} />}
+                <p className="zd-hint" style={{flexShrink:0,margin:0}}>Preview only. Final signed documents must be independently reviewed before closing.</p>
+              </div>
+            </div>}
+            <div className="zd-actions"><button className="zd-button primary" disabled={saveStatus==="saving"} onClick={handleSave}>{saveStatus==="saving"?"Saving...":saveStatus==="saved"?"Saved ✓":"Save Loan"}</button><button className="zd-button" disabled={!activeId || pdfPreviewStatus === "loading"} onClick={openPdfPreview}>Preview Documents</button><button className="zd-button" onClick={()=>setShowDocumentPreview(true)}>Preview Terms</button><button className="zd-button" disabled={genStatus==="generating"} onClick={handleGenerate}>{genStatus==="generating"?"Generating...":"Generate Documents"}</button><button className="zd-button" disabled={lenderInstStatus==="generating"} onClick={handleGenerateLenderInstructions}>{lenderInstStatus==="generating"?"Generating...":"Servicing Agreement"}</button><button className="zd-button" disabled={disclosureStatus==="generating"} onClick={handleGenerateDisclosure}>{disclosureStatus==="generating"?"Generating...":"Lender Disclosures"}</button></div>
             {genStatus==="error"&&<p className="error-msg" role="alert">{errorMsg}</p>}{lenderInstStatus==="error"&&<p className="error-msg" role="alert">{lenderInstErrorMsg}</p>}{disclosureStatus==="error"&&<p className="error-msg" role="alert">{disclosureErrorMsg}</p>}
           </>}
         </div>
