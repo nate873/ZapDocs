@@ -167,6 +167,7 @@ const FIELD_GROUPS = [
   },
   {
     name: "Disclosure (CA only)",
+    states: ["CA"],
     fields: [
       ["LTV", "Loan-to-Value % (e.g. 65%)"],
       ["MARKET_VALUE", "Estimated Market Value ($)"],
@@ -178,6 +179,55 @@ const FIELD_GROUPS = [
       ["MONTHLY_EXPENSES", "Borrower Monthly Expenses ($)"],
       ["ESCROW_NAME", "Escrow Holder Name"],
       ["ESCROW_ADDRESS", "Escrow Holder Address"],
+      ["LENDER_SHARE_AMOUNT", "Lender Share Amount"],
+      ["LENDER_INTEREST_RATE", "Lender Interest Rate"],
+      ["LENDER_PAYMENT_AMOUNT", "Lender Payment Amount"],
+      ["LENDER_BALLOON_PAYMENT", "Lender Balloon Payment"],
+      ["SERVICING_FEE", "Servicing Fee"],
+      ["SERVICER_PHONE", "Servicer Phone"],
+      ["APPRAISER_NAME", "Appraiser Name"],
+      ["APPRAISAL_DATE", "Appraisal Date"],
+      ["APPRAISER_ADDRESS", "Appraiser Address"],
+      ["ANNUAL_PROPERTY_TAXES", "Annual Property Taxes"],
+      ["PROPERTY_SQFT", "Property Sqft"],
+      ["PROPERTY_AGE", "Property Age"],
+      ["FRAME_TYPE", "Frame Type"],
+      ["BORROWER_OCCUPATION", "Borrower Occupation"],
+      ["BORROWER_OCCUPATION_2", "Borrower Occupation 2"],
+      ["BORROWER_EMPLOYER", "Borrower Employer"],
+      ["BORROWER_EMPLOYER_2", "Borrower Employer 2"],
+      ["BORROWER_AGE", "Borrower Age"],
+      ["BORROWER_AGE_2", "Borrower Age 2"],
+      ["MAILING_ADDRESS_2", "Mailing Address 2"],
+      ["GROSS_SALARY_2", "Gross Salary 2"],
+      ["CURRENT_LOAN_POSITION", "Current Loan Position"],
+      ["CURRENT_INTEREST_RATE", "Current Interest Rate"],
+      ["CURRENT_LOAN_AMOUNT", "Current Loan Amount"],
+      ["CURRENT_LOAN_BALANCE", "Current Loan Balance"],
+      ["CURRENT_MONTHLY_PAYMENT", "Current Monthly Payment"],
+      ["CURRENT_MATURITY_DATE", "Current Maturity Date"],
+      ["CURRENT_BALLOON_PAYMENT", "Current Balloon Payment"],
+      ["LENDER_COSTS_TOTAL", "Lender Costs Total"],
+      ["BORROWER_COSTS_TOTAL", "Borrower Costs Total"],
+      ["SENIOR_REMAINING_TOTAL", "Senior Remaining Total"],
+      ["SENIOR_EXPECTED_TOTAL", "Senior Expected Total"],
+      ["LTV_TOTAL_SENIOR", "Ltv Total Senior"],
+      ["LTV_TOTAL_DEBT", "Ltv Total Debt"],
+      ["BROKER_CAPACITY", "Broker Capacity"],
+      ["SERVICING_ARRANGEMENT", "Servicing Arrangement"],
+      ["BORROWER_BANKRUPTCY", "Borrower Bankruptcy"],
+      ["APPRAISER_RELATIONSHIP", "Appraiser Relationship"],
+      ["PROPERTY_OWNER_OCCUPIED", "Property Owner Occupied"],
+      ["PROPERTY_TAXES_DELINQUENT", "Property Taxes Delinquent"],
+      ["PROPERTY_TAXES_DELINQUENT_AMOUNT", "Property Taxes Delinquent Amount"],
+      ["PROPERTY_TAXES_SOURCE", "Property Taxes Source"],
+      ["ESTIMATED_GROSS_ANNUAL_PROPERTY_INCOME", "Estimated Gross Annual Property Income"],
+      ["ESTIMATED_NET_ANNUAL_PROPERTY_INCOME", "Estimated Net Annual Property Income"],
+      ["BORROWER_EMPLOYMENT_YEARS", "Borrower Employment Years"],
+      ["BORROWER_EMPLOYMENT_YEARS_2", "Borrower Employment Years 2"],
+      ["BROKER_SIGNATURE_DATE", "Broker Signature Date"],
+      ["LENDER_SIGNATURE_DATE", "Lender Signature Date"],
+
     ],
   },
 ];
@@ -186,6 +236,15 @@ const ALL_FIELDS = FIELD_GROUPS.flatMap((g) => g.fields.map((f) => f[0]));
 
 // One entry per row of the PAYMENTS table in the Note (Section 3).
 const PAYMENT_ROW_FIELDS = ["COUNT", "START", "DESCRIPTION", "RATE", "AMOUNT"];
+// RE 851A: separate seven-column lender payment addendum.
+const LENDER_DISCLOSURE_ROW_FIELDS = [
+  "COUNT", "START", "BORROWER_RATE", "BORROWER_PAYMENT",
+  "LENDER_RATE", "LENDER_PAYMENT", "LENDER_SHARE"
+];
+function emptyLenderDisclosureRow() {
+  return Object.fromEntries(LENDER_DISCLOSURE_ROW_FIELDS.map(key => [key, ""]));
+}
+
 
 function emptyPaymentRow() {
   const row = {};
@@ -200,6 +259,7 @@ function emptyFields() {
   obj.PAYMENT_STRUCTURE = "interest_only";
   obj.DEFERRED_INTEREST = ""; // No hidden manual override: calculate from payment tiers.
   obj.PAYMENT_ROWS = [emptyPaymentRow()];
+  obj.LENDER_DISCLOSURE_ROWS = [emptyLenderDisclosureRow()];
   return obj;
 }
 
@@ -358,6 +418,40 @@ function LoanWorkspace({ onHome, onSignOut }) {
   }, [pdfPreviewUrl]);
 
   const paymentRows = Array.isArray(fields.PAYMENT_ROWS) ? fields.PAYMENT_ROWS : [];
+  const disclosureRows = Array.isArray(fields.LENDER_DISCLOSURE_ROWS) ? fields.LENDER_DISCLOSURE_ROWS : [];
+  function editDisclosureRow(index, key, value) {
+    setFields(prev => {
+      const rows = [...(prev.LENDER_DISCLOSURE_ROWS || [])];
+      rows[index] = { ...rows[index], [key]: value };
+      return { ...prev, LENDER_DISCLOSURE_ROWS: rows };
+    });
+  }
+  function addDisclosureRow() {
+    setFields(prev => ({ ...prev,
+      LENDER_DISCLOSURE_ROWS: [...(prev.LENDER_DISCLOSURE_ROWS || []), emptyLenderDisclosureRow()]
+    }));
+  }
+  function removeDisclosureRow(index) {
+    setFields(prev => ({ ...prev,
+      LENDER_DISCLOSURE_ROWS: (prev.LENDER_DISCLOSURE_ROWS || []).filter((_, i) => i !== index)
+    }));
+  }
+  function copyNoteRowsToDisclosure() {
+    if (!schedule.valid) {
+      setWorkspaceError("Complete the Note payment schedule before copying it.");
+      return;
+    }
+    const rows = schedule.rows.map(r => ({
+      COUNT: r.COUNT || "", START: r.START || "",
+      BORROWER_RATE: r.RATE || "", BORROWER_PAYMENT: r.AMOUNT || "",
+      LENDER_RATE: "", LENDER_PAYMENT: "", LENDER_SHARE: ""
+    }));
+    if (disclosureRows.some(r => Object.values(r).some(v => String(v || "").trim())) &&
+        !window.confirm("Replace the current lender disclosure rows with the Note rows? Lender-specific amounts will need to be entered again.")) return;
+    setFields(prev => ({...prev, LENDER_DISCLOSURE_ROWS: rows}));
+    setWorkspaceError("");
+  }
+
   const schedule = simulateSchedule(fields);
   const [profiles, setProfiles] = useState([]);
   const [profileType, setProfileType] = useState("lender");
@@ -509,6 +603,9 @@ function LoanWorkspace({ onHome, onSignOut }) {
     // list — show one blank row so there's something to type into.
     if (!Array.isArray(incoming.PAYMENT_ROWS) || incoming.PAYMENT_ROWS.length === 0) {
       incoming.PAYMENT_ROWS = [emptyPaymentRow()];
+    }
+    if (!Array.isArray(incoming.LENDER_DISCLOSURE_ROWS) || incoming.LENDER_DISCLOSURE_ROWS.length === 0) {
+      incoming.LENDER_DISCLOSURE_ROWS = [emptyLenderDisclosureRow()];
     }
     setFields(incoming);
     setLabelInput(data.label || "");
@@ -900,6 +997,24 @@ function LoanWorkspace({ onHome, onSignOut }) {
                     {key === "MONTHLY_PAYMENT" && <div style={{marginTop:8,display:"flex",gap:9,alignItems:"center",flexWrap:"wrap"}}><button type="button" className="zd-button" onClick={calculateRegularPayment}>Calculate monthly interest</button><span className="zd-hint">Estimate: {monthlyInterestEstimate(fields) === null ? "Enter amount and rate" : formatMoney(monthlyInterestEstimate(fields))} (principal × annual rate ÷ 12)</span></div>}
                     </div>;
                 })}</div>
+                {selectedGroup.name === "Disclosures" && fields.STATE === "CA" && (
+                  <fieldset style={{marginTop:24, overflowX:"auto"}}>
+                    <legend>RE 851A — Lender/Purchaser Payment Schedule</legend>
+                    <p className="zd-hint">This schedule is separate from the Note. Enter the lender yield, total lender payment, and this investor’s actual share for every tier and balloon row. Amounts are not estimated automatically.</p>
+                    <button type="button" className="zd-button" onClick={copyNoteRowsToDisclosure}>Copy borrower rows from Note</button>
+                    <table className="zd-table" style={{marginTop:14, minWidth:850}}>
+                      <thead><tr>{["# Payments", "Starting Date", "Borrower Rate %", "Borrower Payment $", "Lender Rate %", "Lender Payment $", "Investor Share $", ""].map(x=><th key={x}>{x}</th>)}</tr></thead>
+                      <tbody>{disclosureRows.map((row, index) => (
+                        <tr key={index}>{LENDER_DISCLOSURE_ROW_FIELDS.map(key=>(
+                          <td key={key}><input className="zd-input" style={{minWidth:95, width:"100%"}}
+                            aria-label={`Disclosure row ${index+1} ${key}`}
+                            value={row[key] || ""} onChange={e=>editDisclosureRow(index,key,e.target.value)} /></td>
+                        ))}<td><button type="button" className="zd-button" onClick={()=>removeDisclosureRow(index)}>Remove</button></td></tr>
+                      ))}</tbody>
+                    </table>
+                    <button type="button" className="zd-button" onClick={addDisclosureRow} style={{marginTop:12}}>+ Add disclosure row</button>
+                  </fieldset>
+                )}
                 {selectedGroup.profile && profileControls(selectedGroup.profile)}
                 {selectedGroup.special==="payments" && <div className="zd-pay">
               <fieldset>
