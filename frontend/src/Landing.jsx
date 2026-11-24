@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
+import ZapDocsLegal, { legalRoute } from "./ZapDocsLegal";
 
 const configuredUrl = (import.meta.env.VITE_SUPABASE_URL || "").trim();
 const configuredKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "").trim();
@@ -1727,6 +1728,10 @@ function ZapDocsLanding({ onLaunch }) {
 
         .zap-final p { margin: 15px 0 0; color: #bfccd5; font-size: 15px; }
 
+        .zap-footer-legal { display: flex; gap: 14px; flex-wrap: wrap; }
+        .zap-footer-legal a { color: var(--zap-ink); text-decoration: none; }
+        .zap-footer-legal a:hover { text-decoration: underline; }
+        .zap-footer-legal a:focus-visible { outline: 2px solid var(--zap-blue); outline-offset: 4px; }
         .zap-footer {
           background: #fff;
           padding: 0 28px 38px;
@@ -2025,7 +2030,12 @@ function ZapDocsLanding({ onLaunch }) {
             <span className="zap-brand-mark">Z</span> ZapDocs
           </button>
           <span>Loan document automation for private lending workflows.</span>
-          <span>© 2026 ZapDocs</span>
+          <span>© 2026 ZapDocs. All rights reserved.</span>
+          <nav aria-label="Legal pages" className="zap-footer-legal">
+            <a href="/terms">Terms</a>
+            <a href="/privacy">Privacy Policy</a>
+            <a href="/accessibility">Accessibility</a>
+          </nav>
         </div>
       </footer>
     </div>
@@ -2093,8 +2103,8 @@ function ZapDocsAuth() {
 
 export default function Landing() {
   const getInitialScreen = () =>
-    window.location.pathname.startsWith("/app") || window.location.hash === "#app"
-      ? "app" : "landing";
+    legalRoute() || (window.location.pathname.startsWith("/app") || window.location.hash === "#app"
+      ? "app" : "landing");
   const [screen, setScreen] = useState(getInitialScreen);
   const [session, setSession] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -2140,6 +2150,14 @@ export default function Landing() {
     setScreen("landing");
   };
 
+  const navigateLegal = (path) => {
+    window.history.pushState({}, "", path);
+    setScreen(getInitialScreen());
+    window.scrollTo(0, 0);
+  };
+  if (["/terms", "/privacy", "/accessibility"].includes(screen)) {
+    return <ZapDocsLegal path={screen} onNavigate={navigateLegal} />;
+  }
   if (screen !== "app") return <ZapDocsLanding onLaunch={openApp} />;
 
   if (setupError) return <div role="alert" style={{ padding: 32, fontFamily: "system-ui", color: "#b42318" }}><h2>ZapDocs configuration error</h2><p>{setupError}</p><button onClick={goHome}>Back home</button></div>;
