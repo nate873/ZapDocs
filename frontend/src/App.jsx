@@ -1,7 +1,7 @@
 import FreeTrial from "./FreeTrial";
 import SitePages, { siteRoute } from "./SitePages";
 import ZapDocsLegal, { legalRoute } from "./ZapDocsLegal";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 // Validate configuration before constructing the client. An invalid .env value
@@ -1212,6 +1212,42 @@ function LoanWorkspace({ onHome, onSignOut }) {
       </main>
     </div>
   );
+}
+
+const megaMenus = [
+  {name:"Platform", items:[["Product overview","Explore the ZapDocs platform","/platform","▦"],["Loan workflow","From loan entry to closing","/loan-workflow","↗"],["Document generation","Prepare complete loan packages","/document-generation","▤"],["Team workspace","Organize lending operations","/team-workspace","◎"]], more:[["How it works","/how-it-works"],["Product guide","/product-guide"],["Getting started","/getting-started"]]},
+  {name:"Documents",items:[["Document generation","Prepare state-specific documents","/document-generation","▤"],["Document outputs","Explore available loan documents","/document-outputs","▧"]],more:[["Loan workflow","/loan-workflow"],["Product guide","/product-guide"]]},
+  {name:"Lenders",items:[["Private lenders","Tools for private money lending","/private-lenders","◇"],["Loan originators","Streamline document preparation","/loan-originators","↗"],["Servicing teams","Prepare servicing documents","/servicing-teams","▤"],["Broker workflows","Simplify broker operations","/broker-workflows","◎"]],more:[["Team workspace","/team-workspace"],["Start free trial","/free-trial"]]},
+  {name:"Resources",items:[["How it works","Explore the workflow","/how-it-works","↗"],["Product guide","Learn the platform","/product-guide","▤"],["Getting started","Take your first steps","/getting-started","◇"],["Help center","Find help using ZapDocs","/help-center","?"]],more:[["Document outputs","/document-outputs"],["Contact support","/contact-support"],["Updates","/updates"]]},
+  {name:"Company",items:[["About ZapDocs","Learn about our company","/about","◇"],["Contact","Get in touch","/contact","✉"],["Security","Learn about data protection","/security","◎"],["Updates","Explore product updates","/updates","↗"]],more:[["Privacy policy","/privacy"],["Terms","/terms"],["Accessibility","/accessibility"]]}
+];
+
+function MegaNavigation({mobile=false}) {
+  const [active,setActive] = useState(null);
+  const root = useRef(null);
+  const closeTimer = useRef(null);
+  const clearClose = () => clearTimeout(closeTimer.current);
+  useEffect(() => {
+    const outside = e => { if (!root.current?.contains(e.target)) setActive(null); };
+    document.addEventListener("pointerdown",outside);
+    return () => { document.removeEventListener("pointerdown",outside); clearTimeout(closeTimer.current); };
+  },[]);
+  return <div ref={root} className={mobile?"zd-mega-mobile":"zl-nav-links zd-mega"}
+    onMouseEnter={clearClose} onMouseLeave={() => {if(!mobile) closeTimer.current=setTimeout(()=>setActive(null),150);}}
+    onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget)) setActive(null);}}
+    onKeyDown={e=>{if(e.key==="Escape"){e.stopPropagation(); root.current?.querySelector('[aria-expanded="true"]')?.focus();setActive(null);}}}>
+    {megaMenus.map((menu,i)=> <div className="zd-mega-item" key={menu.name}>
+      <button type="button" className="zl-nav-link zd-mega-trigger" aria-expanded={active===i} aria-controls={`${mobile?"mobile":"desktop"}-mega-${i}`}
+        onMouseEnter={()=>{if(!mobile){clearClose();setActive(i);}}} onClick={()=>{clearClose();setActive(v=>v===i?null:i);}}>
+        {menu.name}<svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12"><path d="m2 4 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
+      </button>
+      {active===i && <div className="zd-mega-panel" id={`${mobile?"mobile":"desktop"}-mega-${i}`}>
+        <div className="zd-mega-main"><div className="zd-mega-label">{menu.name}</div>
+          {menu.items.map(([label,desc,url,glyph])=><a key={url} href={url} className="zd-mega-link"><span className="zd-mega-icon" aria-hidden="true">{glyph}</span><span><strong>{label}</strong><small>{desc}</small></span><span className="zd-mega-arrow" aria-hidden="true">→</span></a>)}
+        </div><div className="zd-mega-more"><div className="zd-mega-label">Explore more</div>{menu.more.map(([label,url])=><a key={url} href={url}>{label}<span aria-hidden="true">→</span></a>)}</div>
+      </div>}
+    </div>)}
+  </div>;
 }
 
 function ZapDocsLanding({ onLaunch, onLegal }) {
@@ -2541,7 +2577,41 @@ function ZapDocsLanding({ onLaunch, onLegal }) {
           .zl-product-window, .zl-float-output { animation: none; }
           .zl-btn, .zl-nav-cta, .zl-feature-card { transition: none; }
         }
-      `}</style>
+      
+        .zl-nav { position: relative; }
+        .zd-mega { gap: clamp(12px, 2vw, 30px); }
+        .zd-mega-trigger { position:relative; display:flex; align-items:center; gap:6px; }
+        .zd-mega-trigger::after { content:""; position:absolute; bottom:2px; left:0; right:0; height:3px; border-radius:4px; background:#39db90; transform:scaleX(0); transform-origin:left; transition:transform .22s ease; }
+        .zd-mega-trigger[aria-expanded="true"]::after,.zd-mega-trigger:hover::after { transform:scaleX(1); }
+        .zd-mega-trigger svg { transition:transform .22s ease; }
+        .zd-mega-trigger[aria-expanded="true"] svg { transform:rotate(180deg); }
+        .zd-mega-trigger:focus-visible,.zd-mega a:focus-visible,.zd-mega-mobile a:focus-visible { outline:2px solid #315aff; outline-offset:3px; }
+        .zd-mega-panel { position:absolute; top:calc(100% - 15px); right:30px; width:min(680px,calc(100% - 60px)); display:grid; grid-template-columns:1.6fr 1fr; background:#fff; border:1px solid #dce1eb; border-radius:22px; box-shadow:0 24px 65px #080d3622; overflow:hidden; animation:zdMegaIn .22s cubic-bezier(.2,.75,.25,1) both; }
+        @keyframes zdMegaIn { from {opacity:0;transform:translateY(-9px) scale(.985);} to {opacity:1;transform:translateY(0) scale(1);} }
+        .zd-mega-main,.zd-mega-more { padding:26px; }
+        .zd-mega-more { background:#f7f9fc; border-left:1px solid #e2e6ef; }
+        .zd-mega-label { color:#626d85; font-size:12px; font-weight:800; letter-spacing:.13em; text-transform:uppercase; margin:0 0 15px 8px; }
+        .zd-mega-link { display:flex; align-items:center; gap:12px; padding:11px 8px; color:#080d36; text-decoration:none; border-radius:10px; transition:background .18s; }
+        .zd-mega-link:hover,.zd-mega-more a:hover { background:#edf2ff; color:#315aff; }
+        .zd-mega-icon { width:37px;height:37px;flex:0 0 37px;display:grid;place-items:center;border-radius:10px;background:#edf2ff;color:#315aff;font-size:21px; }
+        .zd-mega-link:nth-of-type(2) .zd-mega-icon {background:#f2eaff;color:#9851d5;}
+        .zd-mega-link:nth-of-type(3) .zd-mega-icon {background:#fff0eb;color:#df7257;}
+        .zd-mega-link:nth-of-type(4) .zd-mega-icon {background:#e3faf0;color:#19865d;}
+        .zd-mega-link strong,.zd-mega-link small {display:block;}
+        .zd-mega-link strong {font-size:15px; font-weight:650;}
+        .zd-mega-link small {font-size:12px;color:#69758b;margin-top:4px;line-height:1.4;}
+        .zd-mega-arrow {margin-left:auto;opacity:0;transform:translateX(-4px);transition:opacity .18s,transform .18s;}
+        .zd-mega-link:hover .zd-mega-arrow,.zd-mega-link:focus-visible .zd-mega-arrow {opacity:1;transform:translateX(0);}
+        .zd-mega-more a {display:flex;justify-content:space-between;gap:8px;padding:11px 8px;border-radius:8px;color:#080d36;text-decoration:none;font-size:14px;}
+        .zd-mega-more a span {color:#315aff;}
+        .zd-mega-mobile .zd-mega-panel {position:static;width:100%;display:block;box-shadow:none;border-radius:12px;margin-bottom:8px;}
+        .zd-mega-mobile .zd-mega-more {border-left:0;border-top:1px solid #e2e6ef;}
+        .zd-mega-mobile .zd-mega-main,.zd-mega-mobile .zd-mega-more {padding:12px;}
+        .zd-mega-mobile .zd-mega-trigger {justify-content:space-between;}
+        .zl-mobile-menu {max-height:calc(100dvh - 100px);overflow-y:auto;}
+        @media(max-width:1100px) and (min-width:931px) { .zd-mega {gap:12px;} .zl-nav {gap:14px;padding:0 16px;} .zl-brand {min-width:180px;} .zl-nav-cta {padding:0 18px;} }
+        @media(prefers-reduced-motion:reduce) { .zd-mega-panel {animation:none;} .zd-mega-trigger::after,.zd-mega-trigger svg,.zd-mega-arrow {transition:none;} }
+`}</style>
 
       <div className="zl-topbar-wrap">
         <div className="zl-shell">
@@ -2576,23 +2646,14 @@ function ZapDocsLanding({ onLaunch, onLegal }) {
               <span className="zl-brand-copy"><strong>ZapDocs</strong><span>LOAN DOCUMENTS</span></span>
             </button>
 
-            <div className="zl-nav-links">
-              <a className="zl-nav-link" href="/platform">Platform</a>
-              <a className="zl-nav-link" href="/document-generation">Documents</a>
-              <a className="zl-nav-link" href="/private-lenders">Lenders</a>
-              <a className="zl-nav-link" href="/product-guide">Resources</a>
-              <a className="zl-nav-link" href="/about">Company</a>
-            </div>
+            <MegaNavigation />
 
             <button className="zl-nav-cta" onClick={onLaunch}>Open ZapDocs</button>
-            <button className="zl-menu-btn" onClick={() => setMenuOpen((v) => !v)} aria-label="Open menu">☰</button>
+            <button className="zl-menu-btn" onClick={() => setMenuOpen((v) => !v)} aria-label={menuOpen ? "Close menu" : "Open menu"} aria-expanded={menuOpen}>{menuOpen ? "×" : "☰"}</button>
 
             {menuOpen && (
               <div className="zl-mobile-menu">
-                <a className="zl-nav-link" href="/platform">Platform</a>
-                <a className="zl-nav-link" href="/document-generation">Documents</a>
-                <a className="zl-nav-link" href="/private-lenders">Lenders</a>
-                <a className="zl-nav-link" href="/product-guide">Resources</a>
+                <MegaNavigation mobile />
                 <button className="zl-nav-cta" onClick={onLaunch}>Open ZapDocs</button>
               </div>
             )}
