@@ -158,16 +158,14 @@ const FIELD_GROUPS = [
     ],
   },
   {
-    name: "California Note — Servicer",
-    states: ["CA"],
+    name: "Servicer",
     fields: [
-      ["SERVICER", "Servicer Name (California Note)"],
-      ["SERVICER_ADDRESS", "Servicer Address (California Note)"],
+      ["SERVICER", "Servicer Name"],
+      ["SERVICER_ADDRESS", "Servicer Address"],
     ],
   },
   {
-    name: "Disclosure (CA only)",
-    states: ["CA"],
+    name: "Disclosure",
     fields: [
       ["LTV", "Loan-to-Value % (e.g. 65%)"],
       ["MARKET_VALUE", "Estimated Market Value ($)"],
@@ -266,7 +264,9 @@ function emptyFields() {
 // Payment schedule helpers. Monetary calculations use cents for display; validate final
 // legal/payment figures independently before executing a loan.
 function numberValue(value) {
-  const n = Number(String(value ?? "").replace(/[$,%\s]/g, ""));
+  const raw = String(value ?? "").replace(/[$,%\s]/g, "");
+  if (!raw) return NaN;
+  const n = Number(raw);
   return Number.isFinite(n) ? n : NaN;
 }
 function dateValue(value) {
@@ -371,10 +371,10 @@ function simulateSchedule(fields) {
   if (balloonRaw && (!Number.isFinite(balloon) || balloon < 0)) warnings.push("Invalid balloon payment amount.");
   const additionalBalloon = Number.isFinite(balloon) ? cents(balloon - principal) : NaN;
   if (Number.isFinite(additionalBalloon) && additionalBalloon < -0.01) warnings.push("Balloon is below original principal, but the schedule contains no principal reductions.");
-  if (structure === "neg_am" && Number.isFinite(additionalBalloon) && Math.abs(additionalBalloon - deferredInterest) > 0.01) {
+  if (structure === "neg_am" && Number.isFinite(additionalBalloon) && Math.abs(additionalBalloon - deferredInterest) > 0.01 && Math.abs(additionalBalloon - deferredInterest - monthlyInterest) > 0.01) {
     warnings.push(`Deferred interest is ${formatMoney(deferredInterest)}; stated balloon exceeds principal by ${formatMoney(additionalBalloon)}. Reconcile the difference in the Note (fees, waiver, separate payoff or other charges).`);
   }
-  if (structure !== "neg_am" && Number.isFinite(additionalBalloon) && additionalBalloon > 0.01) {
+  if (structure !== "neg_am" && Number.isFinite(additionalBalloon) && additionalBalloon > 0.01 && Math.abs(additionalBalloon - monthlyInterest) > 0.01) {
     warnings.push(`Balloon includes ${formatMoney(additionalBalloon)} above principal. Confirm what this amount represents.`);
   }
   return { valid: true, rows: derivedRows, installments, endingBalance: principal, deferredInterest,
@@ -520,14 +520,16 @@ function LoanWorkspace({ onHome, onSignOut }) {
     }
     const maturity = dateValue(fields.MATURITY_DATE);
     const statedTerm = String(fields.LOAN_TERM || "").match(/^(\d+)\s*(?:months?|mos?)?$/i);
-    const monthCount = statedTerm ? +statedTerm[1] : (maturity ?
-      (maturity.getUTCFullYear() - first.getUTCFullYear()) * 12 + maturity.getUTCMonth() - first.getUTCMonth() +
-      (maturity.getUTCDate() >= first.getUTCDate() ? 1 : 0) : NaN);
+    if (!maturity || maturity < first || rate > 100) { setWorkspaceError("Enter valid maturity and rate. Maturity must not precede first payment."); return; }
+    let monthCount = 0;
+    while (monthCount <= 600 && nextMonth(first, monthCount) < maturity) monthCount++;
+    if (nextMonth(first, monthCount).getTime() !== maturity.getTime()) { setWorkspaceError("Automatic calculation requires maturity on a scheduled monthly payment date. Enter irregular-period terms manually."); return; }
+    if (statedTerm && +statedTerm[1] !== monthCount + 1) { setWorkspaceError("Loan term differs from the monthly payment dates (including maturity). Reconcile dates before calculating."); return; }
     if (!Number.isInteger(monthCount) || monthCount < 1 || monthCount > 600) {
       setWorkspaceError("Enter a valid loan term in months or Maturity Date."); return;
     }
     if (paymentRows.some((row) => Object.values(row).some((v) => String(v || "").trim())) &&
-        !window.confirm("Replace the current payment schedule with a new interest-only draft?")) return;
+        !window.confirm("Replace the existing schedule, monthly payment and balloon with calculated draft terms?")) return;
     const structure = fields.PAYMENT_STRUCTURE || "interest_only";
     const newRows = [];
     if (structure === "neg_am") {
@@ -557,7 +559,17 @@ function LoanWorkspace({ onHome, onSignOut }) {
       newRows.push({ COUNT: String(monthCount), START: formatDate(first), DESCRIPTION: "", RATE: String(rate),
         AMOUNT: (Math.round(principal * rate / 12) / 100).toFixed(2) });
     }
-    setFields((prev) => ({ ...prev, NUMBER_OF_PAYMENTS: String(monthCount), PAYMENT_ROWS: newRows }));
+    const regular = monthlyInterestEstimate(fields);
+    const cents = v => Math.round((v + Number.EPSILON) * 100) / 100;
+    const draft = simulateSchedule({...fields, PAYMENT_ROWS:newRows, BALLOON_PAYMENT:""});
+    if (!draft.valid) {setWorkspaceError(draft.message); return;}
+    const prepaidMonths = structure === "prepaid" ? numberValue(fields.PREPAID_NUMBER_MONTHS) : 0;
+    if (!Number.isInteger(prepaidMonths) || prepaidMonths < 0 || prepaidMonths > monthCount || (structure === "prepaid" && prepaidMonths === 0)) {setWorkspaceError("Enter prepaid months between 1 and the number of regular installments."); return;}
+    const includeFinal = window.confirm("Include one full month's final interest in the balloon? OK = principal + final interest + deferred interest; Cancel = principal + deferred interest only. Confirm the Note's maturity terms.");
+    const balloon = cents(principal + draft.deferredInterest + (includeFinal ? regular : 0));
+    const monthLabel = d => d.toLocaleDateString("en-US", {month:"long",year:"numeric",timeZone:"UTC"});
+    const pre = structure === "prepaid" ? {PREPAID_PAYMENTS:cents(regular*prepaidMonths).toFixed(2), FIRST_PREPAID_MONTH:monthLabel(first), LAST_PREPAID_MONTH:monthLabel(nextMonth(first,prepaidMonths-1)), FIRST_PREPAID:monthLabel(first), LAST_PREPAID:monthLabel(nextMonth(first,prepaidMonths-1)), FIRST_PAYMENT_DUE:formatDate(nextMonth(first,prepaidMonths)), FIRST_PAYMENT_DATE:formatDate(nextMonth(first,prepaidMonths))} : {};
+    setFields(prev => ({...prev, ...pre, MONTHLY_PAYMENT:regular.toFixed(2), BALLOON_PAYMENT:balloon.toFixed(2), NUMBER_OF_PAYMENTS:String(monthCount), PAYMENT_ROWS:newRows}));
     setWorkspaceError("");
   }
 
@@ -821,7 +833,7 @@ function LoanWorkspace({ onHome, onSignOut }) {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Lender_Instructions_Loan_${loanNumber}.docx`;
+      a.download = `Servicing_Agreement_Loan_${loanNumber}.docx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -889,7 +901,7 @@ function LoanWorkspace({ onHome, onSignOut }) {
     {name:"Servicer", fields: FIELD_GROUPS[8].fields, profile:"servicer"},
     {name:"Brokerage", states:["FL","CA"], fields: FIELD_GROUPS[5].fields.filter(([key]) => fields.STATE === "CA" || key !== "DRE"), profile:"brokerage"},
     {name:"Escrow", fields: FIELD_GROUPS[9].fields.filter(([k])=>["ESCROW_NAME","ESCROW_ADDRESS"].includes(k)), profile:"escrow"},
-    {name:"Disclosures", states:["CA"], fields: FIELD_GROUPS[9].fields.filter(([k])=>!["ESCROW_NAME","ESCROW_ADDRESS"].includes(k))}
+    {name:"Disclosures", fields: FIELD_GROUPS[9].fields.filter(([k])=>!["ESCROW_NAME","ESCROW_ADDRESS"].includes(k))}
   ];
   const visibleGroups = editorGroups.filter(g=>!g.states || g.states.includes(fields.STATE));
   const selectedGroup = visibleGroups.find(g=>g.name===openGroup) || visibleGroups[0];
@@ -990,16 +1002,16 @@ function LoanWorkspace({ onHome, onSignOut }) {
                   const isCA=fields.STATE==="CA";
                   if(selectedGroup.name==="Payment Terms" && isCA && ["FIRST_PREPAID_MONTH","LAST_PREPAID_MONTH","FIRST_PAYMENT_DUE"].includes(key))return null;
                   if(selectedGroup.name==="Payment Terms" && !isCA && ["FIRST_PREPAID","LAST_PREPAID","FIRST_PAYMENT_DATE","PREPAYMENT_PENALTY"].includes(key))return null;
-                  if(selectedGroup.name==="Loan Details" && key==="SERVICING_DATE" && fields.STATE!=="CA")return null;
+                  
                   return <div className="zd-field" key={key}><label className="zd-field-label" htmlFor={`zd-${key}`}>{label.replace(/ \(e\.g\..*\)/, "")}</label>
                     {key === "NOTE_DATE" ? <input id={`zd-${key}`} type="date" value={dateForNative(fields[key])} onChange={e=>handleChange(key,e.target.value ? formatDate(dateValue(e.target.value)) : "")} />
                     : <input id={`zd-${key}`} autoComplete="off" value={fields[key]||""} onChange={e=>handleChange(key,e.target.value)} placeholder={label.match(/e\.g\.[^)]*/)?.[0]?.replace("e.g.","Example:")||""} />}
-                    {key === "MONTHLY_PAYMENT" && <div style={{marginTop:8,display:"flex",gap:9,alignItems:"center",flexWrap:"wrap"}}><button type="button" className="zd-button" onClick={calculateRegularPayment}>Calculate monthly interest</button><span className="zd-hint">Estimate: {monthlyInterestEstimate(fields) === null ? "Enter amount and rate" : formatMoney(monthlyInterestEstimate(fields))} (principal × annual rate ÷ 12)</span></div>}
+                    {key === "MONTHLY_PAYMENT" && <div style={{marginTop:8,display:"flex",gap:9,alignItems:"center",flexWrap:"wrap"}}><button type="button" className="zd-button" onClick={calculateRegularPayment}>Calculate monthly interest</button><button type="button" className="zd-button" onClick={autoFillSchedule}>Calculate all payments</button><span className="zd-hint">Estimate: {monthlyInterestEstimate(fields) === null ? "Enter amount and rate" : formatMoney(monthlyInterestEstimate(fields))} (principal × annual rate ÷ 12)</span></div>}
                     </div>;
                 })}</div>
-                {selectedGroup.name === "Disclosures" && fields.STATE === "CA" && (
+                {selectedGroup.name === "Disclosures" && (
                   <fieldset style={{marginTop:24, overflowX:"auto"}}>
-                    <legend>RE 851A — Lender/Purchaser Payment Schedule</legend>
+                    <legend>Lender/Purchaser Payment Schedule</legend>
                     <p className="zd-hint">This schedule is separate from the Note. Enter the lender yield, total lender payment, and this investor’s actual share for every tier and balloon row. Amounts are not estimated automatically.</p>
                     <button type="button" className="zd-button" onClick={copyNoteRowsToDisclosure}>Copy borrower rows from Note</button>
                     <table className="zd-table" style={{marginTop:14, minWidth:850}}>
@@ -1037,7 +1049,7 @@ function LoanWorkspace({ onHome, onSignOut }) {
               <fieldset>
                 <legend>Payment Schedule (Note, Sec. 3)</legend>
                 <p className="pay-note">RATE is the annual payment-rate equivalent for that tier; contractual interest is calculated separately using the loan's Interest Rate. Leave PAYMENT blank to calculate from tier RATE, or enter an exact payment. No principal is repaid by these installments. A balloon row is displayed separately from monthly payments.</p>
-                <button type="button" className="add-row-btn" onClick={autoFillSchedule} style={{ marginTop: 0, marginBottom: 14 }}>Auto-fill schedule from loan terms</button>
+                <button type="button" className="add-row-btn" onClick={autoFillSchedule} style={{ marginTop: 0, marginBottom: 14 }}>Calculate payments, balloon & schedule</button>
                 <p className="pay-note">Example: loan contract rate 12%, payment rate 6% for the first six months = $1,700/month on $340,000. Thereafter payment rate 12% = $3,400/month. The $1,700 shortfall accrues as deferred interest only when deferred-interest mode is selected.</p>
 
                 <div className="pay-grid">
@@ -1161,7 +1173,7 @@ function LoanWorkspace({ onHome, onSignOut }) {
               <div className="zd-card" onClick={e=>e.stopPropagation()} style={{width:"min(760px,100%)",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 70px rgba(0,0,0,.2)"}}>
                 <div className="zd-toolbar"><div><h2>Document terms preview</h2><p className="zd-hint">Review values before generating. This is a loan-terms preview, not a rendered Word/PDF document.</p></div><button className="zd-button" onClick={()=>setShowDocumentPreview(false)}>Close</button></div>
                 <div className="zd-field-grid" style={{marginTop:16}}>
-                  {[["State",fields.STATE === "FL" ? "Florida — Full Set only" : "California — existing package"],["Loan number",fields.LOAN_NUMBER],["Borrower",fields.VESTING || fields.BORROWER_1],["Lender",fields.LENDER_NAME || fields.LENDER],["Property",[fields.PROPERTY_ADDRESS,fields.PROPERTY_CITY,fields.PROPERTY_STATE,fields.PROPERTY_ZIP].filter(Boolean).join(", ")],["Principal",formatMoney(numberValue(fields.LOAN_AMOUNT))],["Annual rate",fields.INTEREST_RATE ? `${fields.INTEREST_RATE}%` : ""],["Monthly payment (entered)",formatMoney(numberValue(fields.MONTHLY_PAYMENT))],["Monthly interest estimate",monthlyInterestEstimate(fields)===null ? "—" : formatMoney(monthlyInterestEstimate(fields))],["Note date",fields.NOTE_DATE],["First payment",fields.FIRST_PAYMENT],["Maturity",fields.MATURITY_DATE],["Prepaid months",fields.PREPAID_NUMBER_MONTHS],["Prepaid payments",fields.PREPAID_PAYMENTS ? formatMoney(numberValue(fields.PREPAID_PAYMENTS)) : ""],["Balloon (entered)",formatMoney(numberValue(fields.BALLOON_PAYMENT))],["Payment structure",fields.PAYMENT_STRUCTURE]].map(([name,value])=><div key={name} style={{borderBottom:"1px solid #e2e8f2",paddingBottom:9}}><span className="zd-field-label">{name}</span><strong style={{overflowWrap:"anywhere"}}>{value || "Not entered"}</strong></div>)}
+                  {[["State",fields.STATE === "FL" ? "Florida — Full Set + standalone disclosures" : "California — existing package"],["Loan number",fields.LOAN_NUMBER],["Borrower",fields.VESTING || fields.BORROWER_1],["Lender",fields.LENDER_NAME || fields.LENDER],["Property",[fields.PROPERTY_ADDRESS,fields.PROPERTY_CITY,fields.PROPERTY_STATE,fields.PROPERTY_ZIP].filter(Boolean).join(", ")],["Principal",formatMoney(numberValue(fields.LOAN_AMOUNT))],["Annual rate",fields.INTEREST_RATE ? `${fields.INTEREST_RATE}%` : ""],["Monthly payment (entered)",formatMoney(numberValue(fields.MONTHLY_PAYMENT))],["Monthly interest estimate",monthlyInterestEstimate(fields)===null ? "—" : formatMoney(monthlyInterestEstimate(fields))],["Note date",fields.NOTE_DATE],["First payment",fields.FIRST_PAYMENT],["Maturity",fields.MATURITY_DATE],["Prepaid months",fields.PREPAID_NUMBER_MONTHS],["Prepaid payments",fields.PREPAID_PAYMENTS ? formatMoney(numberValue(fields.PREPAID_PAYMENTS)) : ""],["Balloon (entered)",formatMoney(numberValue(fields.BALLOON_PAYMENT))],["Payment structure",fields.PAYMENT_STRUCTURE]].map(([name,value])=><div key={name} style={{borderBottom:"1px solid #e2e8f2",paddingBottom:9}}><span className="zd-field-label">{name}</span><strong style={{overflowWrap:"anywhere"}}>{value || "Not entered"}</strong></div>)}
                 </div>
                 <div style={{marginTop:18}}><strong>Payment schedule</strong>{schedule.valid ? <><p className="zd-hint">{schedule.installments.length} installments; deferred interest estimate {formatMoney(schedule.deferredInterest)}.</p>{schedule.warnings?.map((w,i)=><p key={i} style={{color:"#a33919",fontSize:12}}>⚠ {w}</p>)}</> : <p style={{color:"#a33919",fontSize:12}}>{schedule.message}</p>}</div>
                 <p className="zd-hint">The calculation assumes monthly interest using principal × annual rate ÷ 12. It does not verify daily accrual, payoff fees, prepayment premiums, or legal compliance. Changes must be saved before generation.</p>
