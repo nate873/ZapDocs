@@ -1556,6 +1556,40 @@ function ZapDocsLanding({ onLaunch }) {
           font-weight: 800;
         }
 
+        .zap-feature-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; }
+        .zap-feature-card { --accent:#7045d9; position:relative; isolation:isolate; min-height:440px; padding:30px 28px 0; border-radius:22px; background:var(--accent); color:#fff; display:flex; flex-direction:column; overflow:hidden; transition:transform .25s ease,box-shadow .25s ease; }
+        .zap-feature-card:nth-child(2) { --accent:#2459e8; }
+        .zap-feature-card:nth-child(3) { --accent:#bd4b3c; }
+        .zap-feature-card::before { content:""; position:absolute; inset:0; z-index:-1; background:radial-gradient(ellipse at 100% 0%,rgba(255,255,255,.16),transparent 65%); pointer-events:none; }
+        .zap-feature-card:hover { transform:translateY(-5px); box-shadow:0 18px 35px rgba(15,23,60,.16); }
+        .zap-feature-kicker { display:flex; align-items:center; gap:11px; font-size:11px; font-weight:800; letter-spacing:.13em; text-transform:uppercase; }
+        .zap-feature-kicker svg { width:26px; height:26px; flex:none; }
+        .zap-feature-card h3 { margin:20px 0 10px; font-size:clamp(27px,2.5vw,37px); font-weight:750; line-height:1.12; letter-spacing:-.045em; color:#fff; }
+        .zap-feature-card p { margin:0 0 22px; color:#fff; font-size:14px; line-height:1.55; }
+        .zap-feature-stage { margin:auto -28px 0 0; padding:18px 0 0 17px; background:rgba(255,255,255,.24); border-radius:12px 0 0 0; min-height:210px; display:flex; align-items:flex-end; gap:10px; overflow:hidden; }
+        .zap-feature-window { flex:1; min-width:0; background:#fff; color:#192343; padding:13px; border-radius:10px 0 0 0; box-shadow:0 8px 22px #17234a22; font-size:11px; transform:translateY(8px); transition:transform .35s cubic-bezier(.2,.7,.2,1); }
+        .zap-feature-card:hover .zap-feature-window { transform:translateY(0); }
+        .zap-feature-window-top { display:flex; justify-content:space-between; align-items:center; gap:6px; font-weight:750; margin-bottom:12px; }
+        .zap-feature-sample { font-size:9px; color:#64748b; font-weight:500; }
+        .zap-feature-amount { font-size:25px; letter-spacing:-.05em; font-weight:800; margin:5px 0 12px; }
+        .zap-feature-fields { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+        .zap-feature-field { border:1px solid #e5e9f2; padding:8px; border-radius:6px; min-width:0; }
+        .zap-feature-field span { display:block; color:#64748b; font-size:9px; margin-bottom:4px; }
+        .zap-feature-field strong { font-size:11px; }
+        .zap-feature-status { margin-top:10px; color:#13734c; font-weight:700; font-size:10px; }
+        .zap-feature-state { display:flex; align-items:center; justify-content:space-between; gap:6px; padding:8px; margin:5px 0; border-radius:6px; background:#f1f5ff; }
+        .zap-feature-state strong { color:#254db4; font-size:10px; }
+        .zap-feature-bars { display:flex; align-items:flex-end; gap:6px; height:37px; margin-top:8px; }
+        .zap-feature-bars i { flex:1; border-radius:3px 3px 0 0; background:#547af5; }
+        .zap-feature-file { display:flex; align-items:center; gap:9px; padding:9px 0; border-bottom:1px solid #e8ebf1; }
+        .zap-feature-file-icon { display:grid; place-items:center; width:29px; height:32px; border-radius:5px; background:#fcece8; color:#a83c30; font-size:9px; font-weight:800; flex:none; }
+        .zap-feature-file strong { font-size:10px; flex:1; }
+        .zap-feature-file em { color:#13734c; font-style:normal; font-size:12px; }
+        @media(max-width:600px) { .zap-feature-card { min-height:390px; padding:24px 22px 0; } .zap-feature-stage { margin-right:-22px; } }
+        @media(prefers-reduced-motion:reduce) { .zap-feature-card,.zap-feature-window { transition:none; } .zap-feature-card:hover { transform:none; } }
+
+        @media(max-width:900px) { .zap-feature-grid { grid-template-columns:1fr; } }
+
         .zap-workflow {
           display: grid;
           grid-template-columns: .9fr 1.1fr;
@@ -1921,40 +1955,23 @@ function ZapDocsLanding({ onLaunch }) {
             </div>
           </div>
 
-          <div className="zap-cards">
-            <article className="zap-card">
-              <div className="zap-card-number">01</div>
-              <h3>Capture the deal once.</h3>
-              <p>Keep loan terms, dates, property information, borrower details, lender data and payment schedules together.</p>
-              <div className="zap-card-visual">
-                <div className="zap-mini-row"><span>Loan Amount</span><strong>$425,000</strong></div>
-                <div className="zap-mini-row"><span>Interest Rate</span><strong>9.50%</strong></div>
-                <div className="zap-mini-row"><span>Property State</span><strong>CA</strong></div>
-              </div>
-            </article>
-
-            <article className="zap-card">
-              <div className="zap-card-number">02</div>
-              <h3>Adapt to the loan.</h3>
-              <p>Choose the state and maintain payment tiers without rebuilding a document package from scratch.</p>
-              <div className="zap-card-visual">
-                <div className="zap-mini-row"><span>California</span><span className="zap-mini-pill">Deed of Trust</span></div>
-                <div className="zap-mini-row"><span>Florida</span><span className="zap-mini-pill">Mortgage</span></div>
-                <div className="zap-mini-row"><span>Payment rows</span><strong>Custom</strong></div>
-              </div>
-            </article>
-
-            <article className="zap-card">
-              <div className="zap-card-number">03</div>
-              <h3>Generate what you need.</h3>
-              <p>Create the complete package or pull individual lender-facing documents when that is all the transaction requires.</p>
-              <div className="zap-card-visual">
-                <div className="zap-mini-row"><span>Full loan package</span><strong>.ZIP</strong></div>
-                <div className="zap-mini-row"><span>Lender instructions</span><strong>.DOCX</strong></div>
-                <div className="zap-mini-row"><span>Lender disclosure</span><strong>.DOCX</strong></div>
-              </div>
-            </article>
-          </div>
+            <div className="zap-feature-grid">
+              <article className="zap-feature-card">
+                <div className="zap-feature-kicker"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span>Loan workspace</span></div>
+                <h3>Capture the deal once.</h3><p>Store loan terms, property information, parties and payment schedules in one place.</p>
+                <div className="zap-feature-stage"><div className="zap-feature-window"><div className="zap-feature-window-top">Loan overview <span className="zap-feature-sample">Example</span></div><div className="zap-feature-sample">Loan amount</div><div className="zap-feature-amount">$425,000</div><div className="zap-feature-fields"><div className="zap-feature-field"><span>Interest rate</span><strong>9.50%</strong></div><div className="zap-feature-field"><span>Property state</span><strong>California</strong></div></div><div className="zap-feature-status">✓ Loan record saved</div></div></div>
+              </article>
+              <article className="zap-feature-card">
+                <div className="zap-feature-kicker"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="currentColor" stroke="none"/><circle cx="15" cy="17" r="3" fill="currentColor" stroke="none"/></svg><span>State workflows</span></div>
+                <h3>Match the loan.</h3><p>Choose a state-specific workflow and customize payment schedules without starting over.</p>
+                <div className="zap-feature-stage"><div className="zap-feature-window"><div className="zap-feature-window-top">Document workflow <span className="zap-feature-sample">Example</span></div><div className="zap-feature-state">California <strong>Deed of Trust</strong></div><div className="zap-feature-state">Florida <strong>Mortgage</strong></div><div className="zap-feature-window-top" style={{marginTop:12,marginBottom:0}}>Custom payment tiers</div><div className="zap-feature-bars" aria-hidden="true">{[45,45,45,72,72,72,100,100].map((h,i)=><i key={i} style={{height:h+"%"}} />)}</div></div></div>
+              </article>
+              <article className="zap-feature-card">
+                <div className="zap-feature-kicker"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7h7l2 3h9v10H3zM12 3v4"/></svg><span>Document generation</span></div>
+                <h3>Generate the package.</h3><p>Create a full closing package or the individual lender-facing documents you need.</p>
+                <div className="zap-feature-stage"><div className="zap-feature-window"><div className="zap-feature-window-top">Document outputs <span className="zap-feature-sample">Example</span></div>{[["ZIP","Full loan package"],["DOC","Lender instructions"],["DOC","Lender disclosure"]].map(([type,label])=><div className="zap-feature-file" key={label}><span className="zap-feature-file-icon">{type}</span><strong>{label}</strong><em>✓</em></div>)}<div className="zap-feature-status">Ready to download</div></div></div>
+              </article>
+            </div>
         </div>
       </section>
 
