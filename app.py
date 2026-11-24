@@ -155,8 +155,8 @@ TEMPLATES_BY_STATE = {
         "Oral Disclosure": "oral_disclosure_fl_template.docx",
 
         "Guaranty": "guaranty_template.docx",
-        "Servicing": "fl_servicing_template.docx",
-        "Lender Disclosure": "fl_lender_disclosure_template.docx",
+        "Servicing": "servicing_template.docx",
+        "Lender Disclosure": "lender_disclosure_template.docx",
 
     },
 
@@ -168,13 +168,13 @@ TEMPLATES_BY_STATE = {
 
         "Deed of Trust": "deed_of_trust_template.docx",
 
-        "Servicing": "ca_servicing_template.docx",
+        "Servicing": "servicing_template.docx",
 
         "Boiler": "ca_boiler_template.docx",
 
         "Oral Disclosure": "oral_disclosure_ca_template.docx",
 
-        # California lender disclosure statement.
+        # Shared lender disclosure statement.
 
         "Lender Disclosure": "lender_disclosure_template.docx",
 
@@ -226,7 +226,7 @@ LENDER_INSTRUCTIONS_DOC_KEY = {
 
 # Which doc in each state's package is the standalone "lender disclosure"
 
-# document. Both states use their own templates.
+# document. Both states use the shared template; verify state applicability.
 
 LENDER_DISCLOSURE_DOC_KEY = {
     "FL": "Lender Disclosure",
