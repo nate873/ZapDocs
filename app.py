@@ -26,7 +26,7 @@ from datetime import datetime
 
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
-from flask import Flask, request, send_file, send_from_directory, jsonify, g
+from flask import Flask, request, send_file, send_from_directory, jsonify, g, abort
 
 from functools import wraps
 
@@ -54,7 +54,7 @@ from docx.oxml.ns import qn
 
 from docx.oxml import OxmlElement
 
-app = Flask(__name__, static_folder="static", static_url_path="")
+app = Flask(__name__, static_folder="static", static_url_path="/static")
 
 BASE_DIR = Path(__file__).parent
 
@@ -2864,15 +2864,16 @@ def generate_key_provisions(loan_id):
 
 def serve_react(path):
 
-    if path and app.static_folder is not None:
+    if path == "api" or path.startswith("api/"):
+        abort(404)
 
-        try:
-
+    if path:
+        from werkzeug.utils import safe_join
+        candidate = safe_join(app.static_folder, path)
+        if candidate and os.path.isfile(candidate):
             return send_from_directory(app.static_folder, path)
-
-        except Exception:
-
-            pass
+        if path.startswith("assets/") or Path(path).suffix:
+            abort(404)
 
     return send_from_directory(app.static_folder, "index.html")
 
