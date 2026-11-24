@@ -1,3 +1,6 @@
+import FreeTrial from "./FreeTrial";
+import SitePages, { siteRoute } from "./SitePages";
+import ZapDocsLegal, { legalRoute } from "./ZapDocsLegal";
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -1211,7 +1214,7 @@ function LoanWorkspace({ onHome, onSignOut }) {
   );
 }
 
-function ZapDocsLanding({ onLaunch }) {
+function ZapDocsLanding({ onLaunch, onLegal }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const scrollTo = (id) => {
@@ -1247,6 +1250,7 @@ function ZapDocsLanding({ onLaunch }) {
 
         .zl-page * { box-sizing: border-box; }
         .zl-page button { font: inherit; }
+        .zl-page a.zl-footer-link, .zl-page a.zl-nav-link { text-decoration: none; display: inline-block; }
 
         .zl-shell {
           width: min(1380px, calc(100% - 28px));
@@ -2573,11 +2577,11 @@ function ZapDocsLanding({ onLaunch }) {
             </button>
 
             <div className="zl-nav-links">
-              <button className="zl-nav-link" onClick={() => scrollTo("platform")}>Platform <span className="zl-chevron">⌄</span></button>
-              <button className="zl-nav-link" onClick={() => scrollTo("workflow")}>Documents</button>
-              <button className="zl-nav-link" onClick={() => scrollTo("outputs")}>Lenders <span className="zl-chevron">⌄</span></button>
-              <button className="zl-nav-link" onClick={() => scrollTo("workflow")}>Resources <span className="zl-chevron">⌄</span></button>
-              <button className="zl-nav-link" onClick={() => scrollTo("final")}>Company <span className="zl-chevron">⌄</span></button>
+              <a className="zl-nav-link" href="/platform">Platform</a>
+              <a className="zl-nav-link" href="/document-generation">Documents</a>
+              <a className="zl-nav-link" href="/private-lenders">Lenders</a>
+              <a className="zl-nav-link" href="/product-guide">Resources</a>
+              <a className="zl-nav-link" href="/about">Company</a>
             </div>
 
             <button className="zl-nav-cta" onClick={onLaunch}>Open ZapDocs</button>
@@ -2585,10 +2589,10 @@ function ZapDocsLanding({ onLaunch }) {
 
             {menuOpen && (
               <div className="zl-mobile-menu">
-                <button className="zl-nav-link" onClick={() => scrollTo("platform")}>Platform</button>
-                <button className="zl-nav-link" onClick={() => scrollTo("workflow")}>Documents</button>
-                <button className="zl-nav-link" onClick={() => scrollTo("outputs")}>Lenders</button>
-                <button className="zl-nav-link" onClick={() => scrollTo("workflow")}>Resources</button>
+                <a className="zl-nav-link" href="/platform">Platform</a>
+                <a className="zl-nav-link" href="/document-generation">Documents</a>
+                <a className="zl-nav-link" href="/private-lenders">Lenders</a>
+                <a className="zl-nav-link" href="/product-guide">Resources</a>
                 <button className="zl-nav-cta" onClick={onLaunch}>Open ZapDocs</button>
               </div>
             )}
@@ -2796,7 +2800,7 @@ function ZapDocsLanding({ onLaunch }) {
                 Start with one loan record, keep the deal organized, and generate the documents
                 you need without rebuilding the same file from scratch.
               </p>
-              <button className="zl-trial-btn" onClick={onLaunch}>Start Free Trial</button>
+              <button className="zl-trial-btn" onClick={() => window.location.assign("/free-trial")}>Start Free Trial</button>
               <div className="zl-trial-note">Open the workspace and create your first loan.</div>
             </div>
           </div>
@@ -2806,7 +2810,7 @@ function ZapDocsLanding({ onLaunch }) {
       <footer className="zl-footer">
         <div className="zl-footer-main">
           <div className="zl-footer-cta">
-            <button className="zl-footer-trial" onClick={onLaunch}>Start Free Trial</button>
+            <button className="zl-footer-trial" onClick={() => window.location.assign("/free-trial")}>Start Free Trial</button>
             <div className="zl-footer-cta-note">
               Build your first loan record and see the document workflow in action.
             </div>
@@ -2815,40 +2819,40 @@ function ZapDocsLanding({ onLaunch }) {
           <div className="zl-footer-col">
             <h4>Platform</h4>
             <div className="zl-footer-links">
-              <button className="zl-footer-link" onClick={() => scrollTo("platform")}>Product overview</button>
-              <button className="zl-footer-link" onClick={() => scrollTo("workflow")}>Loan workflow</button>
-              <button className="zl-footer-link" onClick={() => scrollTo("outputs")}>Document generation</button>
-              <button className="zl-footer-link" onClick={() => scrollTo("teams")}>Team workspace</button>
+              <a className="zl-footer-link" href="/platform">Product overview</a>
+              <a className="zl-footer-link" href="/loan-workflow">Loan workflow</a>
+              <a className="zl-footer-link" href="/document-generation">Document generation</a>
+              <a className="zl-footer-link" href="/team-workspace">Team workspace</a>
             </div>
           </div>
 
           <div className="zl-footer-col">
             <h4>Solutions</h4>
             <div className="zl-footer-links">
-              <button className="zl-footer-link" onClick={() => scrollTo("teams")}>Private lenders</button>
-              <button className="zl-footer-link" onClick={() => scrollTo("teams")}>Loan originators</button>
-              <button className="zl-footer-link" onClick={() => scrollTo("teams")}>Servicing teams</button>
-              <button className="zl-footer-link" onClick={() => scrollTo("teams")}>Broker workflows</button>
+              <a className="zl-footer-link" href="/private-lenders">Private lenders</a>
+              <a className="zl-footer-link" href="/loan-originators">Loan originators</a>
+              <a className="zl-footer-link" href="/servicing-teams">Servicing teams</a>
+              <a className="zl-footer-link" href="/broker-workflows">Broker workflows</a>
             </div>
           </div>
 
           <div className="zl-footer-col">
             <h4>Resources</h4>
             <div className="zl-footer-links">
-              <button className="zl-footer-link" onClick={() => scrollTo("workflow")}>How it works</button>
-              <button className="zl-footer-link" onClick={() => scrollTo("outputs")}>Document outputs</button>
-              <button className="zl-footer-link" onClick={() => scrollTo("platform")}>Product guide</button>
-              <button className="zl-footer-link" onClick={() => scrollTo("final")}>Getting started</button>
+              <a className="zl-footer-link" href="/how-it-works">How it works</a>
+              <a className="zl-footer-link" href="/document-outputs">Document outputs</a>
+              <a className="zl-footer-link" href="/product-guide">Product guide</a>
+              <a className="zl-footer-link" href="/getting-started">Getting started</a>
             </div>
           </div>
 
           <div className="zl-footer-col">
             <h4>Company</h4>
             <div className="zl-footer-links">
-              <button className="zl-footer-link" onClick={() => scrollTo("teams")}>About ZapDocs</button>
-              <button className="zl-footer-link" onClick={() => scrollTo("final")}>Contact</button>
-              <button className="zl-footer-link" onClick={() => scrollTo("platform")}>Security</button>
-              <button className="zl-footer-link" onClick={() => scrollTo("final")}>Updates</button>
+              <a className="zl-footer-link" href="/about">About ZapDocs</a>
+              <a className="zl-footer-link" href="/contact">Contact</a>
+              <a className="zl-footer-link" href="/security">Security</a>
+              <a className="zl-footer-link" href="/updates">Updates</a>
             </div>
           </div>
 
@@ -2856,7 +2860,7 @@ function ZapDocsLanding({ onLaunch }) {
             <h4>Get Started</h4>
             <div className="zl-footer-links">
               <button className="zl-footer-link" onClick={onLaunch}>Open ZapDocs</button>
-              <button className="zl-footer-link" onClick={onLaunch}>Start free trial</button>
+              <button className="zl-footer-link" onClick={() => window.location.assign("/free-trial")}>Start free trial</button>
               <button className="zl-footer-link" onClick={onLaunch}>Create a loan</button>
             </div>
           </div>
@@ -2864,8 +2868,8 @@ function ZapDocsLanding({ onLaunch }) {
           <div className="zl-footer-col">
             <h4>Support</h4>
             <div className="zl-footer-links">
-              <button className="zl-footer-link" onClick={() => scrollTo("workflow")}>Help center</button>
-              <button className="zl-footer-link" onClick={() => scrollTo("final")}>Contact support</button>
+              <a className="zl-footer-link" href="/help-center">Help center</a>
+              <a className="zl-footer-link" href="/contact-support">Contact support</a>
             </div>
           </div>
         </div>
@@ -2875,11 +2879,11 @@ function ZapDocsLanding({ onLaunch }) {
             <div className="zl-footer-legal">
               <span>© 2026 ZapDocs. All rights reserved.</span>
               <span>·</span>
-              <button type="button">Terms</button>
+              <button type="button" onClick={() => onLegal("/terms")}>Terms</button>
               <span>·</span>
-              <button type="button">Privacy Policy</button>
+              <button type="button" onClick={() => onLegal("/privacy")}>Privacy Policy</button>
               <span>·</span>
-              <button type="button">Accessibility</button>
+              <button type="button" onClick={() => onLegal("/accessibility")}>Accessibility</button>
             </div>
 
             <div className="zl-footer-socials" aria-label="Social links">
@@ -2970,7 +2974,7 @@ function ZapDocsAuth() {
 export default function App() {
   // Public landing page is always the first screen on a fresh visit.
   const [screen, setScreen] = useState(() =>
-    window.location.pathname.replace(/\/$/, "") === "/app" ? "app" : "landing"
+    (window.location.pathname.replace(/\/$/, "") === "/free-trial" ? "/free-trial" : null) || siteRoute() || legalRoute() || (window.location.pathname.replace(/\/$/, "") === "/app" ? "app" : "landing")
   );
   const [session, setSession] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -2999,7 +3003,7 @@ export default function App() {
 
   useEffect(() => {
     const syncLocation = () => setScreen(
-      window.location.pathname.replace(/\/$/, "") === "/app" ? "app" : "landing"
+      (window.location.pathname.replace(/\/$/, "") === "/free-trial" ? "/free-trial" : null) || siteRoute() || legalRoute() || (window.location.pathname.replace(/\/$/, "") === "/app" ? "app" : "landing")
     );
     window.addEventListener("hashchange", syncLocation);
     window.addEventListener("popstate", syncLocation);
@@ -3018,7 +3022,15 @@ export default function App() {
     setScreen("landing");
   };
 
-  if (screen !== "app") return <ZapDocsLanding onLaunch={openApp} />;
+  const navigateLegal = (path) => {
+    window.history.pushState({}, "", path);
+    setScreen(path === "/app" ? "app" : path === "/" ? "landing" : path);
+    window.scrollTo(0, 0);
+  };
+  if (screen === "/free-trial") return <FreeTrial supabase={supabase} />;
+  if (siteRoute() === screen) return <SitePages path={screen} />;
+  if (["/terms", "/privacy", "/accessibility"].includes(screen)) return <ZapDocsLegal path={screen} onNavigate={navigateLegal} />;
+  if (screen !== "app") return <ZapDocsLanding onLaunch={openApp} onLegal={navigateLegal} />;
 
   if (setupError) return <div role="alert" style={{ padding: 32, fontFamily: "system-ui", color: "#b42318" }}><h2>ZapDocs configuration error</h2><p>{setupError}</p><button onClick={goHome}>Back home</button></div>;
   if (checkingAuth) return <p style={{ padding: 32, fontFamily: "system-ui" }}>Checking your ZapDocs session…</p>;
