@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import ZapDocsLegal, { legalRoute } from "./ZapDocsLegal";
 import Pricing from "./Pricing";
 import Demo from "./Demo";
+import Header from "./Header";
 
 const configuredUrl = (import.meta.env.VITE_SUPABASE_URL || "").trim();
 const configuredKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "").trim();
@@ -876,10 +877,7 @@ function LoanWorkspace() {
 }
 
 function ZapDocsLanding({ onLaunch, onPricing, onDemo }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-
   const scrollTo = (id) => {
-    setMenuOpen(false);
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
   };
 
@@ -906,31 +904,14 @@ function ZapDocsLanding({ onLaunch, onPricing, onDemo }) {
           color: var(--zap-ink);
           font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
             "Segoe UI", sans-serif;
-          overflow-x: hidden;
+          overflow-x: clip;
         }
 
+        .zap-landing > .zap-nav-wrap { position: sticky; top: 0; z-index: 1000; }
+        .zap-landing section[id] { scroll-margin-top: 90px; }
         .zap-landing * { box-sizing: border-box; }
         .zap-landing button, .zap-landing input { font: inherit; }
 
-        .zap-nav-wrap {
-          position: sticky;
-          top: 0;
-          z-index: 40;
-          background: rgba(247, 248, 246, 0.92);
-          backdrop-filter: blur(16px);
-          border-bottom: 1px solid rgba(219, 226, 232, 0.75);
-        }
-
-        .zap-nav {
-          max-width: 1220px;
-          margin: 0 auto;
-          height: 78px;
-          padding: 0 28px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 28px;
-        }
 
         .zap-brand {
           display: inline-flex;
@@ -956,30 +937,6 @@ function ZapDocsLanding({ onLaunch, onPricing, onDemo }) {
           font-size: 17px;
         }
 
-        .zap-nav-links {
-          display: flex;
-          align-items: center;
-          gap: 26px;
-          margin-left: auto;
-        }
-
-        .zap-link {
-          border: 0;
-          background: transparent;
-          color: #314452;
-          font-size: 14px;
-          font-weight: 650;
-          cursor: pointer;
-          padding: 8px 0;
-        }
-
-        .zap-link:hover { color: var(--zap-blue); }
-
-        .zap-nav-actions {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
 
         .zap-btn {
           border: 0;
@@ -1012,15 +969,6 @@ function ZapDocsLanding({ onLaunch, onPricing, onDemo }) {
           border: 1px solid var(--zap-line);
         }
 
-        .zap-menu-btn {
-          display: none;
-          width: 42px;
-          height: 42px;
-          border-radius: 12px;
-          border: 1px solid var(--zap-line);
-          background: #fff;
-          cursor: pointer;
-        }
 
         .zap-hero {
           position: relative;
@@ -1787,21 +1735,7 @@ function ZapDocsLanding({ onLaunch, onPricing, onDemo }) {
         }
 
         @media (max-width: 980px) {
-          .zap-nav-links { display: none; }
-          .zap-nav-actions .zap-btn-ghost { display: none; }
-          .zap-menu-btn { display: grid; place-items: center; }
-          .zap-mobile-menu {
-            position: absolute;
-            top: 70px;
-            left: 18px;
-            right: 18px;
-            border: 1px solid var(--zap-line);
-            border-radius: 16px;
-            background: #fff;
-            padding: 14px;
-            box-shadow: 0 20px 50px rgba(11,29,44,.12);
-          }
-          .zap-mobile-menu .zap-link { display: block; width: 100%; text-align: left; padding: 12px; }
+
           .zap-hero-inner, .zap-section-head, .zap-workflow, .zap-dark-grid { grid-template-columns: 1fr; }
           .zap-product-stage { margin-top: 12px; }
           .zap-window { transform: none; }
@@ -1819,8 +1753,7 @@ function ZapDocsLanding({ onLaunch, onPricing, onDemo }) {
         }
 
         @media (max-width: 680px) {
-          .zap-nav { height: 68px; padding: 0 18px; }
-          .zap-nav-actions .zap-btn-primary { display: none; }
+
           .zap-hero { padding: 54px 18px 48px; }
           .zap-hero h1 { font-size: clamp(46px, 15vw, 67px); }
           .zap-hero-copy { font-size: 17px; }
@@ -1846,38 +1779,7 @@ function ZapDocsLanding({ onLaunch, onPricing, onDemo }) {
         }
       `}</style>
 
-      <div className="zap-nav-wrap">
-        <nav className="zap-nav">
-          <button className="zap-brand" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
-            <span className="zap-brand-mark">Z</span>
-            ZapDocs
-          </button>
-
-          <div className="zap-nav-links">
-            <button className="zap-link" onClick={() => scrollTo("platform")}>Platform</button>
-            <button className="zap-link" onClick={() => scrollTo("workflow")}>How it works</button>
-            <button className="zap-link" onClick={() => scrollTo("outputs")}>Documents</button>
-            <button className="zap-link" onClick={onPricing}>Pricing</button>
-          </div>
-
-          <div className="zap-nav-actions">
-            <button className="zap-btn zap-btn-ghost" onClick={onLaunch}>Log in</button>
-            <button className="zap-btn zap-btn-primary" onClick={onDemo}>Book a Demo</button>
-            <button className="zap-menu-btn" onClick={() => setMenuOpen((v) => !v)} aria-label="Open menu">☰</button>
-          </div>
-
-          {menuOpen && (
-            <div className="zap-mobile-menu">
-              <button className="zap-link" onClick={() => scrollTo("platform")}>Platform</button>
-              <button className="zap-link" onClick={() => scrollTo("workflow")}>How it works</button>
-              <button className="zap-link" onClick={() => scrollTo("outputs")}>Documents</button>
-            <button className="zap-link" onClick={onPricing}>Pricing</button>
-              <button className="zap-link" onClick={onDemo}>Book a Demo →</button>
-              <button className="zap-link" onClick={onLaunch}>Log in</button>
-            </div>
-          )}
-        </nav>
-      </div>
+      <Header onLaunch={onLaunch} onPricing={onPricing} onDemo={onDemo} />
 
       <section className="zap-hero">
         <div className="zap-hero-inner">

@@ -1,7 +1,10 @@
+import Header from "./Header";
+import Demo from "./Demo";
+import Pricing from "./Pricing";
 import FreeTrial from "./FreeTrial";
 import SitePages, { siteRoute } from "./SitePages";
 import ZapDocsLegal, { legalRoute } from "./ZapDocsLegal";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 // Validate configuration before constructing the client. An invalid .env value
@@ -1214,47 +1217,8 @@ function LoanWorkspace({ onHome, onSignOut }) {
   );
 }
 
-const megaMenus = [
-  {name:"Platform", items:[["Product overview","Explore the ZapDocs platform","/platform","▦"],["Loan workflow","From loan entry to closing","/loan-workflow","↗"],["Document generation","Prepare complete loan packages","/document-generation","▤"],["Team workspace","Organize lending operations","/team-workspace","◎"]], more:[["How it works","/how-it-works"],["Product guide","/product-guide"],["Getting started","/getting-started"]]},
-  {name:"Documents",items:[["Document generation","Prepare state-specific documents","/document-generation","▤"],["Document outputs","Explore available loan documents","/document-outputs","▧"]],more:[["Loan workflow","/loan-workflow"],["Product guide","/product-guide"]]},
-  {name:"Lenders",items:[["Private lenders","Tools for private money lending","/private-lenders","◇"],["Loan originators","Streamline document preparation","/loan-originators","↗"],["Servicing teams","Prepare servicing documents","/servicing-teams","▤"],["Broker workflows","Simplify broker operations","/broker-workflows","◎"]],more:[["Team workspace","/team-workspace"],["Start free trial","/free-trial"]]},
-  {name:"Resources",items:[["How it works","Explore the workflow","/how-it-works","↗"],["Product guide","Learn the platform","/product-guide","▤"],["Getting started","Take your first steps","/getting-started","◇"],["Help center","Find help using ZapDocs","/help-center","?"]],more:[["Document outputs","/document-outputs"],["Contact support","/contact-support"],["Updates","/updates"]]},
-  {name:"Company",items:[["About ZapDocs","Learn about our company","/about","◇"],["Contact","Get in touch","/contact","✉"],["Security","Learn about data protection","/security","◎"],["Updates","Explore product updates","/updates","↗"]],more:[["Privacy policy","/privacy"],["Terms","/terms"],["Accessibility","/accessibility"]]}
-];
-
-function MegaNavigation({mobile=false}) {
-  const [active,setActive] = useState(null);
-  const root = useRef(null);
-  const closeTimer = useRef(null);
-  const clearClose = () => clearTimeout(closeTimer.current);
-  useEffect(() => {
-    const outside = e => { if (!root.current?.contains(e.target)) setActive(null); };
-    document.addEventListener("pointerdown",outside);
-    return () => { document.removeEventListener("pointerdown",outside); clearTimeout(closeTimer.current); };
-  },[]);
-  return <div ref={root} className={mobile?"zd-mega-mobile":"zl-nav-links zd-mega"}
-    onMouseEnter={clearClose} onMouseLeave={() => {if(!mobile) closeTimer.current=setTimeout(()=>setActive(null),150);}}
-    onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget)) setActive(null);}}
-    onKeyDown={e=>{if(e.key==="Escape"){e.stopPropagation(); root.current?.querySelector('[aria-expanded="true"]')?.focus();setActive(null);}}}>
-    {megaMenus.map((menu,i)=> <div className="zd-mega-item" key={menu.name}>
-      <button type="button" className="zl-nav-link zd-mega-trigger" aria-expanded={active===i} aria-controls={`${mobile?"mobile":"desktop"}-mega-${i}`}
-        onMouseEnter={()=>{if(!mobile){clearClose();setActive(i);}}} onClick={()=>{clearClose();setActive(v=>v===i?null:i);}}>
-        {menu.name}<svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12"><path d="m2 4 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
-      </button>
-      {active===i && <div className="zd-mega-panel" id={`${mobile?"mobile":"desktop"}-mega-${i}`}>
-        <div className="zd-mega-main"><div className="zd-mega-label">{menu.name}</div>
-          {menu.items.map(([label,desc,url,glyph])=><a key={url} href={url} className="zd-mega-link"><span className="zd-mega-icon" aria-hidden="true">{glyph}</span><span><strong>{label}</strong><small>{desc}</small></span><span className="zd-mega-arrow" aria-hidden="true">→</span></a>)}
-        </div><div className="zd-mega-more"><div className="zd-mega-label">Explore more</div>{menu.more.map(([label,url])=><a key={url} href={url}>{label}<span aria-hidden="true">→</span></a>)}</div>
-      </div>}
-    </div>)}
-  </div>;
-}
-
 function ZapDocsLanding({ onLaunch, onLegal }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-
   const scrollTo = (id) => {
-    setMenuOpen(false);
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
@@ -1281,7 +1245,7 @@ function ZapDocsLanding({ onLaunch, onLegal }) {
           color: var(--zl-ink);
           font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
             "Segoe UI", sans-serif;
-          overflow-x: hidden;
+          overflow-x: clip;
         }
 
         .zl-page * { box-sizing: border-box; }
@@ -1345,7 +1309,7 @@ function ZapDocsLanding({ onLaunch, onLegal }) {
         }
 
         .zl-page > main {
-          padding-top: 148px;
+          padding-top: 0;
         }
 
         .zl-page [id] {
@@ -2458,7 +2422,7 @@ function ZapDocsLanding({ onLaunch, onLegal }) {
           .zl-topbar-wrap { display: none; }
           .zl-topbar { display: none; }
           .zl-nav-wrap { top: 0; }
-          .zl-page > main { padding-top: 82px; }
+          .zl-page > main { padding-top: 0; }
           .zl-page [id] { scroll-margin-top: 78px; }
           .zl-nav { min-height: 82px; padding: 0 18px; }
           .zl-nav-links, .zl-nav-cta { display: none; }
@@ -2613,53 +2577,7 @@ function ZapDocsLanding({ onLaunch, onLegal }) {
         @media(prefers-reduced-motion:reduce) { .zd-mega-panel {animation:none;} .zd-mega-trigger::after,.zd-mega-trigger svg,.zd-mega-arrow {transition:none;} }
 `}</style>
 
-      <div className="zl-topbar-wrap">
-        <div className="zl-shell">
-          <div className="zl-topbar">
-            <button className="zl-top-link" onClick={onLaunch}>
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 24 24"
-                width="15"
-                height="15"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="8" r="3.2" />
-                <path d="M5.5 19c.8-3.5 3.1-5.3 6.5-5.3s5.7 1.8 6.5 5.3" />
-              </svg>
-              <span>Login</span>
-            </button>
-            <button className="zl-top-link" onClick={() => scrollTo("platform")}>⌕ <span>Search</span></button>
-          </div>
-        </div>
-      </div>
-
-      <div className="zl-nav-wrap">
-        <div className="zl-shell">
-          <nav className="zl-nav">
-            <button className="zl-brand" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
-              <span className="zl-logo-mark" aria-hidden="true" />
-              <span className="zl-brand-copy"><strong>ZapDocs</strong><span>LOAN DOCUMENTS</span></span>
-            </button>
-
-            <MegaNavigation />
-
-            <button className="zl-nav-cta" onClick={onLaunch}>Open ZapDocs</button>
-            <button className="zl-menu-btn" onClick={() => setMenuOpen((v) => !v)} aria-label={menuOpen ? "Close menu" : "Open menu"} aria-expanded={menuOpen}>{menuOpen ? "×" : "☰"}</button>
-
-            {menuOpen && (
-              <div className="zl-mobile-menu">
-                <MegaNavigation mobile />
-                <button className="zl-nav-cta" onClick={onLaunch}>Open ZapDocs</button>
-              </div>
-            )}
-          </nav>
-        </div>
-      </div>
+      <Header onLaunch={onLaunch} />
 
       <main>
         <section className="zl-hero">
@@ -3035,7 +2953,7 @@ function ZapDocsAuth() {
 export default function App() {
   // Public landing page is always the first screen on a fresh visit.
   const [screen, setScreen] = useState(() =>
-    (window.location.pathname.replace(/\/$/, "") === "/free-trial" ? "/free-trial" : null) || siteRoute() || legalRoute() || (window.location.pathname.replace(/\/$/, "") === "/app" ? "app" : "landing")
+    (window.location.pathname.replace(/\/$/, "") === "/free-trial" ? "/free-trial" : null) || siteRoute() || (["/demo", "/pricing"].includes(window.location.pathname.replace(/\/$/, "")) ? window.location.pathname.replace(/\/$/, "") : null) || legalRoute() || (window.location.pathname.replace(/\/$/, "") === "/app" ? "app" : "landing")
   );
   const [session, setSession] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -3064,7 +2982,7 @@ export default function App() {
 
   useEffect(() => {
     const syncLocation = () => setScreen(
-      (window.location.pathname.replace(/\/$/, "") === "/free-trial" ? "/free-trial" : null) || siteRoute() || legalRoute() || (window.location.pathname.replace(/\/$/, "") === "/app" ? "app" : "landing")
+      (window.location.pathname.replace(/\/$/, "") === "/free-trial" ? "/free-trial" : null) || siteRoute() || (["/demo", "/pricing"].includes(window.location.pathname.replace(/\/$/, "")) ? window.location.pathname.replace(/\/$/, "") : null) || legalRoute() || (window.location.pathname.replace(/\/$/, "") === "/app" ? "app" : "landing")
     );
     window.addEventListener("hashchange", syncLocation);
     window.addEventListener("popstate", syncLocation);
@@ -3090,6 +3008,8 @@ export default function App() {
   };
   if (screen === "/free-trial") return <FreeTrial supabase={supabase} />;
   if (siteRoute() === screen) return <SitePages path={screen} />;
+  if (screen === "/demo") return <><Header onLaunch={openApp}/><Demo onHome={goHome} onLaunch={openApp} onPricing={()=>navigateLegal("/pricing")}/></>;
+  if (screen === "/pricing") return <><Header onLaunch={openApp}/><Pricing onHome={goHome} onLaunch={openApp}/></>;
   if (["/terms", "/privacy", "/accessibility"].includes(screen)) return <ZapDocsLegal path={screen} onNavigate={navigateLegal} />;
   if (screen !== "app") return <ZapDocsLanding onLaunch={openApp} onLegal={navigateLegal} />;
 
