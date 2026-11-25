@@ -2541,11 +2541,11 @@ def preview_document(loan_id):
 
 def generate(loan_id):
 
-    """Download individually rendered Word documents as a ZIP, without PDFs or merging.
+    """Download the Florida Full Set directly or the original California ZIP.
 
     CA: Note, Deed of Trust, Boiler, Oral Disclosure only.
 
-    FL: generate only the Florida Full Set template as a single DOCX in the ZIP.
+    FL: generate only the Florida Full Set template as a direct DOCX download.
 
     Servicing Agreement and Lender Disclosure remain on their separate endpoints.
 
@@ -2581,9 +2581,28 @@ def generate(loan_id):
 
     else:
 
-        # Preserve the existing Florida document selection (plus Full Set).
-
-        templates_to_render = {**{key: value for key, value in TEMPLATES_BY_STATE["FL"].items() if key not in ("Servicing", "Lender Disclosure")}, **COMMON_TEMPLATES}
+        # Florida downloads only the existing Full Set template, without an outer ZIP.
+        template_file = COMMON_TEMPLATES["Full Set"]
+        template_path = BASE_DIR / template_file
+        try:
+            if not template_path.is_file():
+                return jsonify({"error": f"Template file not found: {template_file}"}), 500
+            document = DocxTemplate(str(template_path))
+            document.render(context)
+            docx_buffer = io.BytesIO()
+            document.save(docx_buffer)
+            docx_buffer.seek(0)
+            response = send_file(
+                docx_buffer,
+                as_attachment=True,
+                download_name=f"Full_Set_Loan_{safe_filename_part(loan_number, 'loan')}.docx",
+                mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+            response.headers["Cache-Control"] = "no-store, private"
+            return response
+        except Exception:
+            app.logger.exception("Florida Full Set generation failed")
+            return jsonify({"error": "Could not generate the Florida Full Set."}), 500
 
     safe_loan_number = safe_filename_part(loan_number, "loan")
 
