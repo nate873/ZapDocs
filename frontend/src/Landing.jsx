@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 import ZapDocsLegal, { legalRoute } from "./ZapDocsLegal";
+import Pricing from "./Pricing";
 
 const configuredUrl = (import.meta.env.VITE_SUPABASE_URL || "").trim();
 const configuredKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "").trim();
@@ -873,7 +874,7 @@ function LoanWorkspace() {
   );
 }
 
-function ZapDocsLanding({ onLaunch }) {
+function ZapDocsLanding({ onLaunch, onPricing }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const scrollTo = (id) => {
@@ -1855,6 +1856,7 @@ function ZapDocsLanding({ onLaunch }) {
             <button className="zap-link" onClick={() => scrollTo("platform")}>Platform</button>
             <button className="zap-link" onClick={() => scrollTo("workflow")}>How it works</button>
             <button className="zap-link" onClick={() => scrollTo("outputs")}>Documents</button>
+            <button className="zap-link" onClick={onPricing}>Pricing</button>
           </div>
 
           <div className="zap-nav-actions">
@@ -1868,6 +1870,7 @@ function ZapDocsLanding({ onLaunch }) {
               <button className="zap-link" onClick={() => scrollTo("platform")}>Platform</button>
               <button className="zap-link" onClick={() => scrollTo("workflow")}>How it works</button>
               <button className="zap-link" onClick={() => scrollTo("outputs")}>Documents</button>
+            <button className="zap-link" onClick={onPricing}>Pricing</button>
               <button className="zap-link" onClick={onLaunch}>Open ZapDocs →</button>
             </div>
           )}
@@ -2120,7 +2123,7 @@ function ZapDocsAuth() {
 
 export default function Landing() {
   const getInitialScreen = () =>
-    legalRoute() || (window.location.pathname.startsWith("/app") || window.location.hash === "#app"
+    legalRoute() || (window.location.pathname.replace(/\/$/, "") === "/pricing" ? "pricing" : null) || (window.location.pathname.startsWith("/app") || window.location.hash === "#app"
       ? "app" : "landing");
   const [screen, setScreen] = useState(getInitialScreen);
   const [session, setSession] = useState(null);
@@ -2162,9 +2165,15 @@ export default function Landing() {
     window.history.pushState({}, "", "/app");
     setScreen("app");
   };
+  const openPricing = () => {
+    window.history.pushState({}, "", "/pricing");
+    setScreen("pricing");
+    window.scrollTo(0, 0);
+  };
   const goHome = () => {
     window.history.pushState({}, "", "/");
     setScreen("landing");
+    window.scrollTo(0, 0);
   };
 
   const navigateLegal = (path) => {
@@ -2175,7 +2184,8 @@ export default function Landing() {
   if (["/terms", "/privacy", "/accessibility"].includes(screen)) {
     return <ZapDocsLegal path={screen} onNavigate={navigateLegal} />;
   }
-  if (screen !== "app") return <ZapDocsLanding onLaunch={openApp} />;
+  if (screen === "pricing") return <Pricing onHome={goHome} onLaunch={openApp} />;
+  if (screen !== "app") return <ZapDocsLanding onLaunch={openApp} onPricing={openPricing} />;
 
   if (setupError) return <div role="alert" style={{ padding: 32, fontFamily: "system-ui", color: "#b42318" }}><h2>ZapDocs configuration error</h2><p>{setupError}</p><button onClick={goHome}>Back home</button></div>;
   if (checkingAuth) return <p style={{ padding: 32, fontFamily: "system-ui" }}>Checking your ZapDocs session…</p>;
