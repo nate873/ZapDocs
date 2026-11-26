@@ -394,10 +394,47 @@ const PROFILE_CATEGORIES = [
   { key: "brokerage", label: "Brokerage", fields: ["BROKERAGE", "BROKERAGE_NAME", "BROKERAGE_ADDRESS", "BROKERAGE_CITYSTATEZIP", "BROKERAGE_PHONE", "BROKERAGE_FAX", "NMLS", "BROKERAGE_REP", "BROKER_REPRESENTATIVE", "DRE"] },
 ];
 
-function LoanWorkspace({ onHome, onSignOut }) {
+function WorkspaceIcon({name}) {
+  const paths={brand:<><path d="m12 2 9 5v10l-9 5-9-5V7z"/><path d="m7 8 10 4-5 3v4M7 8v4l5 3"/></>,grid:<><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,folder:<path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>,file:<><path d="M6 3h8l4 4v14H6zM14 3v5h4M9 13h6M9 17h6"/></>,plus:<path d="M12 5v14M5 12h14"/>,arrow:<path d="M5 12h14m-6-6 6 6-6 6"/>,check:<path d="m5 12 4 4L19 6"/>,shield:<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM9 12l2 2 4-4"/>,home:<path d="m3 10 9-7 9 7v10h-6v-7H9v7H3z"/>,logout:<path d="M10 4H4v16h6m4-4 4-4-4-4m-6 4h12"/>,users:<><circle cx="9" cy="8" r="3"/><path d="M3 20v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6m1 3a5 5 0 0 1 4 5"/></>};
+  return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+}
+
+function LoanWorkspace({ onHome, onSignOut, user }) {
+  const accountEmail = String(user?.email || "");
+  const accountName = String(user?.user_metadata?.full_name || user?.user_metadata?.name || accountEmail.split("@")[0] || "Your account").trim() || "Your account";
+  const accountInitials = accountName.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map(part => part[0].toUpperCase()).join("") || "U";
   const [loans, setLoans] = useState([]); // Always keep this as an array.
   const [view, setView] = useState("dashboard");
   const [loanSearch, setLoanSearch] = useState("");
+  const [portfolioTab, setPortfolioTab] = useState("all");
+  const [portfolioSort, setPortfolioSort] = useState({ key: "", direction: 1 });
+  const [portfolioDetails, setPortfolioDetails] = useState({});
+  const [portfolioLoading, setPortfolioLoading] = useState(false);
+  const [portfolioMissing, setPortfolioMissing] = useState(0);
+  const [portfolioRetry, setPortfolioRetry] = useState(0);
+  useEffect(() => {
+    if (view !== "loans") return;
+    let cancelled = false;
+    setPortfolioDetails({});
+    setPortfolioMissing(0);
+    setPortfolioLoading(true);
+    const keys = ["LOAN_NUMBER","BORROWER_1","BORROWER_2","VESTING","PROPERTY_ADDRESS","PROPERTY_CITY","PROPERTY_STATE","STATE","MATURITY_DATE","LOAN_AMOUNT","INTEREST_RATE","LOAN_POSITION","PROPERTY_TYPE","LENDER_NAME","LENDER"];
+    const pick = f => Object.fromEntries(keys.map(k => [k, f?.[k] ?? ""]));
+    (async () => {
+      let missing = 0;
+      for (let i = 0; i < loans.length && !cancelled; i += 6) {
+        const batch = await Promise.all(loans.slice(i, i+6).map(async l => {
+          if (l.fields && Object.hasOwn(l.fields, "LOAN_NUMBER") && Object.hasOwn(l.fields, "PROPERTY_ADDRESS")) return [l.id, pick(l.fields)];
+          try { const d = await apiJson(`/api/loans/${l.id}`); return [l.id, pick(d.fields)]; }
+          catch { missing++; return [l.id, pick(l.fields)]; }
+        }));
+        if (!cancelled) setPortfolioDetails(prev => ({...prev, ...Object.fromEntries(batch)}));
+      }
+      if (!cancelled) { setPortfolioMissing(missing); setPortfolioLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [view, loans, portfolioRetry]);
+
   const [openGroup, setOpenGroup] = useState("Loan Details");
   const [activeId, setActiveId] = useState(null);
   const [fields, setFields] = useState(emptyFields());
@@ -591,7 +628,7 @@ function LoanWorkspace({ onHome, onSignOut }) {
     (async () => {
       try {
         const data = await refreshList();
-        if (data.length > 0) await openLoan(data[0].id);
+        if (data.length > 0) { await openLoan(data[0].id); setView("dashboard"); }
       } catch (err) {
         setWorkspaceError(err.message || "Unable to load loans.");
       } finally {
@@ -911,7 +948,33 @@ function LoanWorkspace({ onHome, onSignOut }) {
   ];
   const visibleGroups = editorGroups.filter(g=>!g.states || g.states.includes(fields.STATE));
   const selectedGroup = visibleGroups.find(g=>g.name===openGroup) || visibleGroups[0];
-  const filteredLoans = loans.filter(l => String(l.label || "").toLowerCase().includes(loanSearch.toLowerCase()) || String(l.id).includes(loanSearch));
+  const portfolioRows = loans.map(l => {
+    const f = portfolioDetails[l.id] || l.fields || {};
+    const state = String(f.PROPERTY_STATE || f.STATE || "").trim().toUpperCase();
+    const maturity = dateValue(f.MATURITY_DATE);
+    const now = new Date();
+    const today = new Date(Date.UTC(now.getFullYear(),now.getMonth(),now.getDate()));
+    const days = maturity ? Math.round((maturity-today)/86400000) : null;
+    return {...l, number:f.LOAN_NUMBER, borrower:f.VESTING || [f.BORROWER_1,f.BORROWER_2].filter(Boolean).join(" / "), address:f.PROPERTY_ADDRESS, city:f.PROPERTY_CITY, state:state==="CA"||state==="CALIFORNIA"?"California":state==="FL"||state==="FLORIDA"?"Florida":state, maturity, days, amount:numberValue(f.LOAN_AMOUNT), rate:numberValue(f.INTEREST_RATE), position:f.LOAN_POSITION, propertyType:f.PROPERTY_TYPE, lender:f.LENDER_NAME||f.LENDER};
+  });
+  const portfolioTabs = [
+    ["all","All loans",()=>true], ["ca","California",r=>r.state==="California"], ["fl","Florida",r=>r.state==="Florida"],
+    ["upcoming","Maturing in 90 days",r=>r.days!==null&&r.days>=0&&r.days<=90], ["past","Past maturity",r=>r.days!==null&&r.days<0], ["missing","No maturity date",r=>!r.maturity]
+  ];
+  const portfolioColumns = [["number","Loan number"],["label","Loan name"],["borrower","Borrower / vesting"],["address","Property address"],["city","City"],["state","State"],["maturity","Maturity date"],["amount","Loan amount"],["rate","Interest rate"],["position","Lien position"],["propertyType","Property type"],["lender","Lender"]];
+  const filteredLoans = portfolioRows.filter(r => (portfolioTabs.find(t=>t[0]===portfolioTab)?.[2] || (()=>true))(r) && [r.id,...portfolioColumns.map(([k])=>k==="maturity"?formatDate(r.maturity):r[k])].some(v=>String(v??"").toLowerCase().includes(loanSearch.trim().toLowerCase()))).sort((a,b)=>{
+    const k=portfolioSort.key; if(!k)return 0;
+    const x=a[k], y=b[k]; const missing=v=>v==null||v===""||(typeof v==="number"&&!Number.isFinite(v));
+    if(missing(x)||missing(y))return missing(x)===missing(y)?0:missing(x)?1:-1;
+    return portfolioSort.direction*((typeof x==="number"||x instanceof Date)?x-y:String(x).localeCompare(String(y),undefined,{numeric:true,sensitivity:"base"}));
+  });
+  function portfolioCell(r,k) {
+    if(k==="maturity")return formatDate(r.maturity)||"—";
+    if(k==="amount")return formatMoney(r.amount);
+    if(k==="rate")return Number.isFinite(r.rate)?`${r.rate}%`:"—";
+    return r[k]||"—";
+  }
+
   const totalAmount = loans.reduce((sum,l)=>sum+(numberValue(l?.fields?.LOAN_AMOUNT)||0),0);
 
   function profileControls(categoryKey) {
@@ -970,14 +1033,51 @@ function LoanWorkspace({ onHome, onSignOut }) {
         .zd-app .error-msg{color:#ac332b;font-size:13px}.zd-app .lender-inst-btn{border:1px solid #cfd8e9;background:white;border-radius:9px;padding:10px 13px;font-weight:700;color:#3159e4}
         @media(max-width:1000px){.zd-edit-layout{grid-template-columns:1fr}.zd-sections{position:static;display:flex;flex-wrap:wrap}.zd-sections button{width:auto}.zd-field-grid{grid-template-columns:1fr}}
         @media(max-width:780px){.zd-app{display:block}.zd-side{width:100%;height:auto;position:static;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line)}.zd-brand{padding:4px;font-size:19px}.zd-nav{flex-direction:row;gap:3px}.zd-nav button{padding:9px;font-size:12px}.zd-content{padding:15px}.zd-kpi{grid-template-columns:1fr}.zd-pay .pay-row{grid-template-columns:repeat(2,minmax(0,1fr));padding:10px;border:1px solid #e2e7f2;border-radius:8px}.zd-pay .pay-head{display:none}.zd-pay .pay-row-tools{grid-column:1/-1}}
+
+        /* Workspace refresh — matches landing page navy and electric blue. */
+        .zd-app{--ink:#101d32;--muted:#64748b;--line:#e0e6ef;--blue:#3f64ef;background:#f5f7fb}
+        .zd-app button:focus-visible{outline:3px solid #7fa5ff;outline-offset:3px}
+        .zd-side{width:238px;flex-basis:238px;background:#0b123e;color:white;border:0;display:flex;flex-direction:column;padding:26px 16px;gap:12px}
+        .zd-brand{color:#fff;display:flex;align-items:center;gap:10px;padding:4px 10px 22px;font-size:25px;letter-spacing:-1px}.zd-brand-mark{width:36px;height:36px;border-radius:10px;background:#315aff;display:grid;place-items:center;color:white}.zd-brand-mark svg{width:25px;height:25px}
+        .zd-side-caption{font-size:10px;letter-spacing:.13em;font-weight:800;color:#9ba8ce;padding:0 12px}.zd-nav button{display:flex;align-items:center;gap:12px;color:#c4cce4;padding:13px 12px;transition:background .2s,color .2s}.zd-nav button:hover{background:#ffffff12;color:white}.zd-nav button.active{background:#3458e8;color:white;box-shadow:0 5px 16px #0002}.zd-nav svg{flex:none}
+        .zd-side-bottom{margin-top:auto;display:grid;gap:7px}.zd-side-bottom button{display:flex;align-items:center;gap:12px;text-align:left;background:transparent;border:0;color:#c4cce4;padding:11px 12px;border-radius:9px;font-size:13px}.zd-side-bottom button:hover{background:#ffffff12;color:white}.zd-side-note{display:flex;gap:10px;align-items:center;background:#ffffff0d;border:1px solid #ffffff15;padding:12px;border-radius:12px;margin-bottom:8px;color:#b5c5ff}.zd-side-note strong,.zd-side-note small{display:block}.zd-side-note strong{font-size:12px;color:white}.zd-side-note small{font-size:11px;margin-top:4px}
+        .zd-top{padding:20px 32px;min-height:82px}.zd-top h1{font-weight:800;letter-spacing:-.035em}.zd-top small{display:block;margin-top:4px}.zd-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:10px;transition:background .2s,box-shadow .2s,transform .2s}.zd-button svg{width:16px;height:16px;flex:none}.zd-button.primary{background:#3f64ef;border-color:#3f64ef;box-shadow:0 4px 10px #315aff20}.zd-content{padding:30px 32px;max-width:1500px}.zd-card{border-radius:17px;padding:23px;box-shadow:0 5px 20px #0b123e05}.zd-dashboard{display:grid;gap:24px}
+        .zd-welcome{position:relative;overflow:hidden;display:flex;justify-content:space-between;align-items:center;gap:20px;padding:34px 36px;background:radial-gradient(ellipse at 95% 10%,#365bec 0,transparent 58%),linear-gradient(120deg,#0b123e,#192d80);border-radius:22px;color:white;min-height:220px;box-shadow:0 12px 30px #0b123e16}.zd-welcome>div:first-child{position:relative;z-index:1;max-width:650px}.zd-eyebrow{font-size:10px;font-weight:800;letter-spacing:.13em;color:#3e5ed0}.zd-welcome .zd-eyebrow{color:#a9bdff}.zd-welcome h2{font-size:clamp(26px,3vw,38px);line-height:1.12;letter-spacing:-.045em;margin:12px 0}.zd-welcome p{color:#d2ddfa;line-height:1.6;font-size:14px;margin:0;max-width:540px}.zd-welcome-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:23px}.zd-white{background:white;color:#15317e;border-color:white}.zd-ghost{background:#ffffff12;border-color:#ffffff40;color:white}.zd-ghost:hover{background:#ffffff25}.zd-hero-art{width:180px;height:160px;position:relative;flex:none;margin-right:18px}.zd-art-sheet{position:absolute;inset:12px 28px 0 30px;border-radius:14px}.zd-art-sheet.back{background:#7896ff66;transform:rotate(15deg) translate(15px,-10px);border:1px solid #ffffff60}.zd-art-sheet.front{background:#fff;color:#3f64ef;transform:rotate(-8deg);padding:18px;box-shadow:0 12px 30px #0003}.zd-art-sheet.front>svg{width:30px;height:30px}.zd-art-sheet i{height:5px;background:#e0e8ff;display:block;margin-top:10px;border-radius:4px}.zd-art-sheet i:nth-of-type(2){width:75%}.zd-art-sheet i:nth-of-type(3){width:55%}.zd-art-sheet span{position:absolute;right:-13px;bottom:13px;background:#15976a;border:3px solid white;border-radius:50%;display:grid;place-items:center;width:38px;height:38px;color:white}
+        .zd-overview-head{display:flex;align-items:end;justify-content:space-between;gap:12px}.zd-overview-head h2{margin:6px 0 0;font-size:24px;letter-spacing:-.035em}.zd-dashboard .zd-kpi{margin:-8px 0 0;gap:16px}.zd-metric{min-width:0;transition:transform .22s,box-shadow .22s}.zd-metric-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.zd-metric-icon{display:grid;place-items:center;width:40px;height:40px;flex:0 0 40px;background:#edf2ff;color:#315aff;border-radius:12px}.zd-metric-icon.purple{background:#f0eaff;color:#8753c8}.zd-metric-icon.green{background:#e4f6ed;color:#16865d}.zd-stat-label{font-weight:750;letter-spacing:.045em;font-size:11px}.zd-stat{font-size:34px;letter-spacing:-.045em;margin:10px 0 5px}.zd-stat-name{font-size:21px;overflow-wrap:anywhere;line-height:1.25}.zd-metric .zd-hint{margin:0}.zd-dashboard-grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(240px,1fr);gap:18px;align-items:start}.zd-recent,.zd-quick{min-width:0}.zd-dashboard .zd-card h2{font-size:19px;letter-spacing:-.025em;margin:0 0 5px}.zd-dashboard .zd-card p.zd-hint{margin:0}.zd-recent-table{min-width:400px}.zd-recent-table thead{background:#f5f7fc}.zd-recent-table th{font-size:11px;text-transform:uppercase;letter-spacing:.04em}.zd-recent-table td,.zd-recent-table th{padding:13px 10px}.zd-loan-name{display:flex;align-items:center;gap:9px;overflow-wrap:anywhere}.zd-loan-name strong{font-size:13px}.zd-file-icon{width:32px;height:35px;flex:0 0 32px;display:grid;place-items:center;background:#edf2ff;color:#315aff;border-radius:8px}.zd-file-icon svg{width:17px;height:17px}.zd-record-pill{font-size:11px;font-weight:650;color:#56657d;background:#edf1f6;border-radius:20px;padding:5px 9px;white-space:nowrap}.zd-open{white-space:nowrap;color:#315aff;border-color:#dce4ff}.zd-table tbody tr:hover{background:#f8faff}.zd-quick-link{width:100%;display:flex;align-items:center;text-align:left;gap:12px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px 10px;margin-top:12px;color:var(--ink);transition:background .2s,border-color .2s}.zd-quick-link:hover{background:#f5f8ff;border-color:#b9c9ff}.zd-quick-link>span:nth-child(2){flex:1;min-width:0}.zd-quick-link strong,.zd-quick-link small{display:block}.zd-quick-link strong{font-size:13px}.zd-quick-link small{font-size:11px;color:var(--muted);margin-top:4px}.zd-quick-link>svg{width:16px;flex:none;color:#315aff}.zd-quick-note{display:flex;gap:9px;align-items:start;margin-top:18px;padding:13px;background:#f4f7fc;border-radius:11px;font-size:12px;line-height:1.6;color:var(--muted)}.zd-quick-note svg{flex:none;color:#315aff}.zd-empty{padding:30px 10px;text-align:center;color:var(--muted)}
+        @media(hover:hover){.zd-metric:hover{transform:translateY(-3px);box-shadow:0 12px 28px #0b123e0e}}
+        @media(max-width:1180px){.zd-dashboard-grid{grid-template-columns:1fr}.zd-hero-art{margin-right:0}.zd-content{padding:24px}.zd-top{padding:18px 24px}}
+        @media(max-width:780px){.zd-side{width:100%;height:auto;display:block;padding:14px;position:static}.zd-brand{padding:0 4px 12px;font-size:21px}.zd-side-caption,.zd-side-bottom{display:none}.zd-nav{display:flex;flex-direction:row;gap:4px;flex-wrap:wrap}.zd-nav button{width:auto;flex:1;justify-content:center;padding:10px 7px;font-size:12px;gap:5px}.zd-nav svg{width:16px;height:16px}.zd-content{padding:16px}.zd-top{padding:15px}.zd-welcome{padding:25px;min-height:0}.zd-hero-art{display:none}.zd-dashboard .zd-kpi{grid-template-columns:1fr}.zd-overview-head{align-items:start}.zd-overview-head .zd-button{font-size:11px}.zd-card{padding:17px}}
+        .zd-account{display:flex;align-items:center;gap:8px;min-width:0;padding:12px 5px 2px;margin-top:7px;border-top:1px solid #ffffff20}.zd-account-avatar{display:grid;place-items:center;flex:0 0 30px;width:30px;height:30px;border-radius:50%;background:#3458e8;color:white;font-size:11px;font-weight:800}.zd-account-copy{min-width:0;flex:1}.zd-account-copy strong,.zd-account-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.zd-account-copy strong{font-size:11px;font-weight:700;color:white}.zd-account-copy small{font-size:10px;color:#b8c5e5;margin-top:3px}
+        @media(max-width:780px){.zd-side .zd-side-bottom{display:flex;align-items:center;flex-wrap:wrap;margin-top:8px;gap:4px}.zd-side .zd-side-bottom button{font-size:11px;padding:7px}.zd-account{margin:0 0 0 auto;padding:4px 0 4px 9px;border-top:0;border-left:1px solid #ffffff20;max-width:55%}}
+        /* Compact workspace navigation */
+        @media(min-width:781px){
+          .zd-side{width:184px;flex:0 0 184px;padding:18px 9px;gap:8px;overflow-y:auto}
+          .zd-brand{font-size:20px;gap:7px;padding:3px 7px 17px;letter-spacing:-.65px}
+          .zd-brand-mark{width:28px;height:28px;flex:0 0 28px;border-radius:7px}.zd-brand-mark svg{width:20px;height:20px}
+          .zd-side-caption{font-size:9px;padding:0 9px;letter-spacing:.1em}
+          .zd-nav{gap:3px}.zd-nav button{min-height:36px;padding:9px 8px;font-size:12px;gap:8px;border-radius:6px;font-weight:600}
+          .zd-nav svg,.zd-side-bottom button svg{width:16px;height:16px;flex:none}
+          .zd-nav button.active{box-shadow:none}
+          .zd-side-bottom{gap:3px}.zd-side-bottom button{padding:9px 8px;font-size:12px;gap:8px;border-radius:6px}
+          .zd-side-note{padding:9px 7px;gap:6px;border-radius:8px;margin-bottom:5px}.zd-side-note>svg{width:16px;height:16px;flex:none}.zd-side-note strong{font-size:11px}.zd-side-note small{font-size:10px}
+        }
+        @media(prefers-reduced-motion:reduce){.zd-app .zd-button,.zd-app .zd-metric,.zd-app .zd-nav button,.zd-quick-link{transition:none}.zd-metric:hover{transform:none}}
+
+        .zd-top-actions .zd-button,.zd-portfolio .zd-toolbar .zd-button,.zd-portfolio-tools .zd-button{font-size:12px;font-weight:650;padding:7px 12px;min-height:32px;line-height:1.4;border-radius:7px;gap:5px}.zd-top{min-height:68px;padding:12px 32px}.zd-top-actions{gap:7px}.zd-portfolio-tools .zd-search{font-size:13px;padding:8px 11px;min-height:34px}.zd-portfolio-tools{gap:9px}.zd-portfolio .zd-toolbar .zd-button.primary,.zd-top-actions .zd-button.primary{box-shadow:0 2px 6px #315aff18}
+        .zd-portfolio{padding:20px;min-width:0}.zd-portfolio h2{font-size:24px;letter-spacing:-.04em;margin:5px 0}.zd-portfolio .zd-toolbar .zd-hint{margin:0}.zd-portfolio-tabs{display:flex;gap:5px;overflow-x:auto;border-bottom:1px solid var(--line);margin-top:22px}.zd-portfolio-tabs button{display:flex;align-items:center;gap:7px;white-space:nowrap;padding:12px 11px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);font-size:12px;font-weight:700}.zd-portfolio-tabs button.active{border-bottom-color:var(--blue);color:var(--blue)}.zd-portfolio-tabs button span{background:#edf1f7;border-radius:10px;padding:2px 7px;font-size:11px}.zd-portfolio-tools{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:15px 0}.zd-portfolio-tools input{flex:1;min-width:180px}.zd-portfolio-scroll{overflow:auto;max-height:65vh;border:1px solid #dce3ed;border-radius:9px}.zd-portfolio-table{border-collapse:separate;border-spacing:0;width:100%;min-width:1750px;font-size:12px;text-align:left}.zd-portfolio-table th,.zd-portfolio-table td{padding:10px 12px;border-bottom:1px solid #e1e6ee;border-right:1px solid #e1e6ee;vertical-align:middle}.zd-portfolio-table th{position:sticky;top:0;z-index:2;background:#edf1f7;color:#34435d;white-space:nowrap;font-weight:750}.zd-portfolio-table th button{display:flex;justify-content:space-between;gap:12px;width:100%;border:0;background:none;color:inherit;padding:0;text-align:left;font-weight:inherit}.zd-portfolio-table th button span{color:#8391a6}.zd-portfolio-table td{background:white;max-width:240px;overflow-wrap:anywhere}.zd-portfolio-table tr:nth-child(even) td{background:#f3f5f8}.zd-portfolio-table tr:hover td{background:#eaf0ff}.zd-portfolio-table th:first-child,.zd-portfolio-table td:first-child{position:sticky;left:0;white-space:nowrap;z-index:1;box-shadow:2px 0 4px #10204009}.zd-portfolio-table th:first-child{z-index:3}.zd-portfolio-table .numeric{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.zd-portfolio-open{border:0;background:#3159eb;color:white;font-size:11px!important;font-weight:700;padding:6px 10px;border-radius:5px}.zd-portfolio-open:hover{background:#2447c9}.zd-portfolio-state{background:#e8eef8;color:#344c75;padding:4px 7px;border-radius:5px;white-space:nowrap}.zd-portfolio-delete{border:0;background:transparent;color:#a33a36;font-size:11px!important}.zd-portfolio-empty{text-align:center;padding:30px!important}.zd-portfolio-table th:last-child,.zd-portfolio-table td:last-child{border-right:0}.zd-portfolio-table tr:last-child td{border-bottom:0}
       `}</style>
       <aside className="zd-side">
-        <div className="zd-brand">ZapDocs</div>
+        <div className="zd-brand"><span className="zd-brand-mark"><WorkspaceIcon name="brand" /></span>ZapDocs</div>
+        <div className="zd-side-caption">WORKSPACE</div>
         <nav className="zd-nav" aria-label="Workspace navigation">
-          <button className={view==="dashboard"?"active":""} onClick={()=>setView("dashboard")}>▦ Dashboard</button>
-          <button className={view==="loans"?"active":""} onClick={()=>setView("loans")}>▤ Loans</button>
-          <button className={view==="information"?"active":""} onClick={()=>setView("information")}>▣ Loan Information</button>
+          {[["dashboard","Dashboard","grid"],["loans","Loans","folder"],["information","Loan Information","file"]].map(([key,label,icon])=><button key={key} type="button" className={view===key?"active":""} aria-current={view===key?"page":undefined} onClick={()=>setView(key)}><WorkspaceIcon name={icon}/><span>{label}</span></button>)}
         </nav>
+        <div className="zd-side-bottom"><button type="button" onClick={onHome}><WorkspaceIcon name="home"/> Website</button><button type="button" onClick={onSignOut}><WorkspaceIcon name="logout"/> Sign out</button>
+          <div className="zd-account" aria-label="Signed-in account" title={accountEmail ? `${accountName} · ${accountEmail}` : accountName}>
+            <span className="zd-account-avatar" aria-hidden="true">{accountInitials}</span>
+            <div className="zd-account-copy"><strong>{accountName}</strong><small>{accountEmail || "Signed in"}</small></div>
+          </div>
+        </div>
       </aside>
       <main className="zd-main">
         <header className="zd-top">
@@ -986,14 +1086,26 @@ function LoanWorkspace({ onHome, onSignOut }) {
         </header>
         <div className="zd-content">
           {workspaceError && <div role="alert" className="zd-alert">{workspaceError}</div>}
-          {view==="dashboard" && <>
-            <div className="zd-toolbar"><div><h2 style={{margin:0}}>Loan overview</h2><p className="zd-hint">Your saved loans and document workspace</p></div><button className="zd-button" onClick={()=>setView("loans")}>View all loans</button></div>
-            <div className="zd-kpi"><div className="zd-card"><div className="zd-stat-label">Saved Loans</div><div className="zd-stat">{loans.length}</div></div><div className="zd-card"><div className="zd-stat-label">Current Loan</div><div className="zd-stat" style={{fontSize:20}}>{activeId?labelInput||"New Loan":"None selected"}</div></div><div className="zd-card"><div className="zd-stat-label">Available Documents</div><div className="zd-stat" style={{fontSize:20}}>Word packages</div></div></div>
-            <div className="zd-card"><div className="zd-toolbar"><h2>Recent Loans</h2><button className="zd-button" onClick={()=>setView("loans")}>See all</button></div>{loans.length===0?<p className="zd-hint">No saved loans yet. Create one with New Loan.</p>:<div className="zd-table-wrap"><table className="zd-table"><thead><tr><th>Loan</th><th>Action</th></tr></thead><tbody>{loans.slice(0,6).map(l=><tr key={l.id}><td>{l.label||"Untitled loan"}</td><td><button className="zd-button" onClick={()=>openLoan(l.id)}>Open loan</button></td></tr>)}</tbody></table></div>}</div>
-          </>}
-          {view==="loans" && <div className="zd-card"><div className="zd-toolbar"><div><h2>All Loans</h2><p className="zd-hint">Open an existing loan to edit its information or generate documents.</p></div><input className="zd-search" placeholder="Search loans..." value={loanSearch} onChange={e=>setLoanSearch(e.target.value)} /></div>
-            {loadingList?<p className="zd-hint">Loading loans...</p>:filteredLoans.length===0?<p className="zd-hint">No matching loans found.</p>:<div className="zd-table-wrap"><table className="zd-table"><thead><tr><th>Loan Name</th><th>Loan ID</th><th>Actions</th></tr></thead><tbody>{filteredLoans.map(l=><tr key={l.id}><td><strong>{l.label||"Untitled loan"}</strong></td><td>{String(l.id).slice(0,10)}</td><td><div style={{display:"flex",gap:8}}><button className="zd-button" onClick={()=>openLoan(l.id)}>Open</button><button className="zd-button" style={{color:"#ba332e"}} onClick={e=>handleDeleteLoan(l.id,e)}>Delete</button></div></td></tr>)}</tbody></table></div>}
+          {view==="dashboard" && <div className="zd-dashboard">
+            <section className="zd-welcome"><div><div className="zd-eyebrow">YOUR LENDING WORKSPACE</div><h2>Manage loans with confidence.</h2><p>Create loan records, organize transaction details and prepare your closing documents in one place.</p><div className="zd-welcome-actions"><button className="zd-button zd-white" onClick={handleAddLoan}><WorkspaceIcon name="plus"/> New loan</button><button className="zd-button zd-ghost" onClick={()=>setView("loans")}>Browse loans <WorkspaceIcon name="arrow"/></button></div></div><div className="zd-hero-art" aria-hidden="true"><div className="zd-art-sheet back"/><div className="zd-art-sheet front"><WorkspaceIcon name="file"/><i/><i/><i/><span><WorkspaceIcon name="check"/></span></div></div></section>
+            <div className="zd-overview-head"><div><div className="zd-eyebrow">AT A GLANCE</div><h2>Loan overview</h2></div><button className="zd-button" onClick={()=>setView("loans")}>View all loans <WorkspaceIcon name="arrow"/></button></div>
+            <div className="zd-kpi">
+              <div className="zd-card zd-metric"><div className="zd-metric-top"><span className="zd-stat-label">Saved loans</span><span className="zd-metric-icon"><WorkspaceIcon name="folder"/></span></div><div className="zd-stat">{loadingList?"—":loans.length}</div><div className="zd-hint">Records in your workspace</div></div>
+              <div className="zd-card zd-metric"><div className="zd-metric-top"><span className="zd-stat-label">Current loan</span><span className="zd-metric-icon purple"><WorkspaceIcon name="file"/></span></div><div className="zd-stat zd-stat-name">{activeId?labelInput||"New Loan":"None selected"}</div><div className="zd-hint">{activeId?(fields.STATE==="CA"?"California":"Florida")+" document workflow":"Select a saved loan to continue"}</div></div>
+              <div className="zd-card zd-metric"><div className="zd-metric-top"><span className="zd-stat-label">Reusable profiles</span><span className="zd-metric-icon green"><WorkspaceIcon name="users"/></span></div><div className="zd-stat">{profiles.length}</div><div className="zd-hint">Saved parties and company details</div></div>
+            </div>
+            <div className="zd-dashboard-grid"><section className="zd-card zd-recent"><div className="zd-toolbar"><div><h2>Recent loans</h2><p className="zd-hint">Continue working on your saved records.</p></div><button className="zd-button" onClick={()=>setView("loans")}>See all <WorkspaceIcon name="arrow"/></button></div>
+              {loadingList?<p className="zd-empty">Loading your loans…</p>:loans.length===0?<div className="zd-empty"><WorkspaceIcon name="folder"/><p>No saved loans yet.</p><button className="zd-button primary" onClick={handleAddLoan}>Create your first loan</button></div>:<div className="zd-table-wrap"><table className="zd-table zd-recent-table"><thead><tr><th>Loan name</th><th>Record</th><th>Action</th></tr></thead><tbody>{loans.slice(0,6).map(l=><tr key={l.id}><td><div className="zd-loan-name"><span className="zd-file-icon"><WorkspaceIcon name="file"/></span><strong>{l.label||"Untitled loan"}</strong></div></td><td><span className="zd-record-pill">{l.id===activeId?"Current":"Saved"}</span></td><td><button className="zd-button zd-open" onClick={()=>openLoan(l.id)}>Open <WorkspaceIcon name="arrow"/></button></td></tr>)}</tbody></table></div>}
+            </section><aside className="zd-card zd-quick"><h2>Quick actions</h2><p className="zd-hint">Pick up where you left off.</p>{[["plus","Create a loan","Start a new loan record",handleAddLoan],["folder","Browse loans","Find an existing transaction",()=>setView("loans")],["file","Loan information","Continue editing your current loan",()=>setView("information")]].map(([icon,title,desc,action])=><button type="button" className="zd-quick-link" key={title} onClick={action}><span className="zd-metric-icon"><WorkspaceIcon name={icon}/></span><span><strong>{title}</strong><small>{desc}</small></span><WorkspaceIcon name="arrow"/></button>)}<div className="zd-quick-note"><WorkspaceIcon name="shield"/><span>Review generated documents before use. During beta, use sample or redacted information.</span></div></aside></div>
           </div>}
+          {view==="loans" && <section className="zd-card zd-portfolio">
+            <div className="zd-toolbar"><div><div className="zd-eyebrow">LOAN WORKSPACE</div><h2>Loan portfolio</h2><p className="zd-hint">Search, filter and open saved loan records.</p></div><button className="zd-button primary" onClick={handleAddLoan}>＋ New loan</button></div>
+            <nav className="zd-portfolio-tabs" aria-label="Filter loans">{portfolioTabs.map(([key,title,test])=><button type="button" key={key} aria-pressed={portfolioTab===key} className={portfolioTab===key?"active":""} onClick={()=>setPortfolioTab(key)}>{title}<span>{loadingList||portfolioLoading?"…":portfolioRows.filter(test).length}</span></button>)}</nav>
+            <div className="zd-portfolio-tools"><input className="zd-search" aria-label="Search loan portfolio" placeholder="Search name, loan number, address…" value={loanSearch} onChange={e=>setLoanSearch(e.target.value)}/><span className="zd-hint" role="status">{loadingList?"Loading loans…":`${filteredLoans.length} of ${loans.length} loans${portfolioLoading?" · Loading details…":""}`}</span><button className="zd-button" type="button" disabled={portfolioLoading} onClick={()=>{setLoanSearch("");setPortfolioTab("all");setPortfolioSort({key:"",direction:1});}}>Clear filters</button></div>
+            {portfolioMissing>0&&<p className="zd-hint" role="status">Details could not be loaded for {portfolioMissing} records. <button className="zd-button" onClick={()=>setPortfolioRetry(n=>n+1)}>Retry</button></p>}
+            <div className="zd-portfolio-scroll" tabIndex={0} aria-label="Scrollable loan table"><table className="zd-portfolio-table"><thead><tr><th scope="col">Loan details</th>{portfolioColumns.map(([key,title])=><th key={key} scope="col" aria-sort={portfolioSort.key===key?(portfolioSort.direction===1?"ascending":"descending"):"none"}><button type="button" onClick={()=>setPortfolioSort(prev=>({key,direction:prev.key===key?-prev.direction:1}))}>{title}<span aria-hidden="true">{portfolioSort.key===key?(portfolioSort.direction===1?"↑":"↓"):"↕"}</span></button></th>)}<th scope="col">Actions</th></tr></thead><tbody>{filteredLoans.map(r=><tr key={r.id}><td><button className="zd-portfolio-open" onClick={()=>openLoan(r.id)}>Open <span aria-hidden="true">↗</span></button></td>{portfolioColumns.map(([key])=><td key={key} className={key==="amount"||key==="rate"?"numeric":undefined}>{key==="state"&&r.state?<span className="zd-portfolio-state">{r.state}</span>:portfolioCell(r,key)}</td>)}<td><button className="zd-portfolio-delete" onClick={e=>handleDeleteLoan(r.id,e)}>Delete</button></td></tr>)}{!filteredLoans.length&&<tr><td colSpan={portfolioColumns.length+2} className="zd-portfolio-empty">{loadingList||portfolioLoading?"Loading loan records…":"No matching loans."}</td></tr>}</tbody></table></div>
+            <p className="zd-hint">Scroll horizontally for more columns. Maturity filters use recorded dates only, not payment or servicing status.</p>
+          </section>}
           {view==="information" && !activeId && <div className="zd-card"><h2>No loan selected</h2><p className="zd-hint">Choose an existing loan or create a new one to enter information.</p><button className="zd-button primary" onClick={()=>setView("loans")}>Browse loans</button></div>}
           {view==="information" && activeId && <>
             <div className="zd-form-header"><div style={{flex:"1 1 260px"}}><label className="zd-field-label" htmlFor="zd-loan-label">Loan name</label><input className="zd-input" id="zd-loan-label" placeholder="Example: Smith - 1037 Garfield" value={labelInput} onChange={e=>setLabelInput(e.target.value)} /></div><div><label className="zd-field-label">Loan state</label><div className="zd-state"><button className={fields.STATE==="FL"?"active":""} onClick={()=>handleChange("STATE","FL")}>Florida</button><button className={fields.STATE==="CA"?"active":""} onClick={()=>handleChange("STATE","CA")}>California</button></div></div></div>
@@ -3019,7 +3131,7 @@ export default function App() {
 
   return (
     <div>
-      <LoanWorkspace key={session.user.id} onHome={goHome} onSignOut={async()=>{await supabase.auth.signOut();}} />
+      <LoanWorkspace key={session.user.id} user={session.user} onHome={goHome} onSignOut={async()=>{await supabase.auth.signOut();}} />
     </div>
   );
 }
