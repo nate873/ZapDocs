@@ -413,7 +413,7 @@ function LoanWorkspace({ onHome, onSignOut, user }) {
   const [portfolioMissing, setPortfolioMissing] = useState(0);
   const [portfolioRetry, setPortfolioRetry] = useState(0);
   useEffect(() => {
-    if (view !== "loans") return;
+    if (view !== "loans" && view !== "dashboard") return;
     let cancelled = false;
     setPortfolioDetails({});
     setPortfolioMissing(0);
@@ -424,7 +424,7 @@ function LoanWorkspace({ onHome, onSignOut, user }) {
       let missing = 0;
       for (let i = 0; i < loans.length && !cancelled; i += 6) {
         const batch = await Promise.all(loans.slice(i, i+6).map(async l => {
-          if (l.fields && Object.hasOwn(l.fields, "LOAN_NUMBER") && Object.hasOwn(l.fields, "PROPERTY_ADDRESS")) return [l.id, pick(l.fields)];
+          if (l.fields && Object.hasOwn(l.fields, "LOAN_NUMBER") && Object.hasOwn(l.fields, "PROPERTY_ADDRESS") && ["LOAN_AMOUNT", "INTEREST_RATE", "MATURITY_DATE", "STATE", "LOAN_POSITION"].every(k => Object.hasOwn(l.fields, k))) return [l.id, pick(l.fields)];
           try { const d = await apiJson(`/api/loans/${l.id}`); return [l.id, pick(d.fields)]; }
           catch { missing++; return [l.id, pick(l.fields)]; }
         }));
@@ -975,7 +975,39 @@ function LoanWorkspace({ onHome, onSignOut, user }) {
     return r[k]||"—";
   }
 
-  const totalAmount = loans.reduce((sum,l)=>sum+(numberValue(l?.fields?.LOAN_AMOUNT)||0),0);
+  // Dashboard analytics use saved loan terms, never unsaved editor values.
+  const dashboardBusy = loadingList || portfolioLoading;
+  const amountRows = portfolioRows.filter(r => Number.isFinite(r.amount) && r.amount > 0);
+  const rateRows = portfolioRows.filter(r => Number.isFinite(r.rate) && r.rate >= 0 && r.rate <= 100);
+  const totalAmount = amountRows.reduce((sum,r)=>sum+r.amount,0);
+  const averageRate = rateRows.length ? rateRows.reduce((sum,r)=>sum+r.rate,0)/rateRows.length : null;
+  const dashboardMoney = value => value.toLocaleString("en-US", {style:"currency",currency:"USD",maximumFractionDigits:0});
+  const stateMix = [
+    {label:"Florida", count:portfolioRows.filter(r=>r.state==="Florida").length,color:"#315cff"},
+    {label:"California", count:portfolioRows.filter(r=>r.state==="California").length,color:"#a33ef0"},
+    {label:"Other / unspecified",count:portfolioRows.filter(r=>!['Florida','California'].includes(r.state)).length,color:"#b8c4d8"}
+  ];
+  const maturityMix = [
+    {label:"Next 30 days",count:portfolioRows.filter(r=>r.days!==null&&r.days>=0&&r.days<=30).length,color:"#f59e0b"},
+    {label:"31–90 days",count:portfolioRows.filter(r=>r.days!==null&&r.days>30&&r.days<=90).length,color:"#8b5cf6"},
+    {label:"Beyond 90 days",count:portfolioRows.filter(r=>r.days!==null&&r.days>90).length,color:"#10b981"},
+    {label:"Past maturity date",count:portfolioRows.filter(r=>r.days!==null&&r.days<0).length,color:"#f47285"},
+    {label:"No date recorded",count:portfolioRows.filter(r=>r.days===null).length,color:"#cbd5e1"}
+  ];
+  const positionMix = [
+    {label:"First lien", count:portfolioRows.filter(r=>/^(1(st)?|first)(\b|$)/i.test(String(r.position||'').trim())).length,color:"#10b981"},
+    {label:"Second lien", count:portfolioRows.filter(r=>/^(2(nd)?|second)(\b|$)/i.test(String(r.position||'').trim())).length,color:"#315cff"}
+  ];
+  positionMix.push({label:"Other / unspecified",count:loans.length-positionMix.reduce((sum,r)=>sum+r.count,0),color:"#cbd5e1"});
+  const upcomingLoans = portfolioRows.filter(r=>r.days!==null&&r.days>=0&&r.days<=90).sort((a,b)=>a.days-b.days);
+  function dashboardChart(title, eyebrow, segments, subtitle) {
+    let offset=0;
+    const stops=segments.filter(x=>x.count>0).map(x=>{const start=offset;offset+=x.count/Math.max(1,loans.length)*100;return `${x.color} ${start}% ${offset}%`;});
+    return <section className="zd-card zd-chart-card"><div className="zd-eyebrow">{eyebrow}</div><h2>{title}</h2><p className="zd-hint">{subtitle}</p>
+      <div className="zd-donut" role="img" aria-label={dashboardBusy?"Loading chart":segments.map(x=>`${x.label}: ${x.count}`).join(", ")} style={{background:!dashboardBusy&&stops.length?`conic-gradient(${stops.join(",")})`:"#e9eef6"}}><div><strong>{dashboardBusy?"—":loans.length}</strong><small>Saved loans</small></div></div>
+      <div className="zd-chart-legend">{segments.map(x=><div key={x.label}><i style={{background:x.color}}/><span>{x.label}</span><strong>{dashboardBusy?"—":x.count}</strong></div>)}</div>
+    </section>;
+  }
 
   function profileControls(categoryKey) {
     const category = PROFILE_CATEGORIES.find(c=>c.key===categoryKey);
@@ -1061,6 +1093,16 @@ function LoanWorkspace({ onHome, onSignOut, user }) {
           .zd-side-bottom{gap:3px}.zd-side-bottom button{padding:9px 8px;font-size:12px;gap:8px;border-radius:6px}
           .zd-side-note{padding:9px 7px;gap:6px;border-radius:8px;margin-bottom:5px}.zd-side-note>svg{width:16px;height:16px;flex:none}.zd-side-note strong{font-size:11px}.zd-side-note small{font-size:10px}
         }
+
+        /* Dashboard-only analytics */
+        .zd-dashboard-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:-8px}
+        .zd-dashboard .zd-summary-tile{position:relative;overflow:hidden;padding:19px;min-width:0;border:0;background:var(--tile-bg);color:var(--tile-ink)}
+        .zd-summary-tile.blue{--tile-bg:#e9efff;--tile-ink:#2549d7;--tile-icon:#d5dfff}.zd-summary-tile.green{--tile-bg:#dcf8e9;--tile-ink:#08764e;--tile-icon:#baf0d4}.zd-summary-tile.purple{--tile-bg:#f1e7ff;--tile-ink:#7936c7;--tile-icon:#e5d1ff}.zd-summary-tile.orange{--tile-bg:#fff0da;--tile-ink:#a65a09;--tile-icon:#ffe0ad}
+        .zd-summary-tile .zd-metric-top>span:first-child{font-size:12px;font-weight:700}.zd-summary-icon{display:grid;place-items:center;width:34px;height:34px;flex:0 0 34px;background:var(--tile-icon);border-radius:10px}.zd-summary-icon svg{width:18px;height:18px}.zd-summary-tile>strong{display:block;font-size:clamp(22px,2.2vw,32px);letter-spacing:-.045em;margin:15px 0 7px;overflow-wrap:anywhere;color:#101d32}.zd-summary-tile>small{display:block;font-size:11px;line-height:1.5;color:var(--tile-ink)}
+        .zd-charts-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.zd-dashboard .zd-chart-card{min-width:0;padding:21px}.zd-chart-card .zd-eyebrow{margin-bottom:8px;color:#64748b}.zd-donut{width:144px;height:144px;border-radius:50%;display:grid;place-items:center;margin:24px auto}.zd-donut>div{width:94px;height:94px;border-radius:50%;background:white;display:flex;flex-direction:column;align-items:center;justify-content:center}.zd-donut strong{font-size:27px;letter-spacing:-.04em;color:#111b37}.zd-donut small{font-size:10px;color:#64748b}.zd-chart-legend{display:grid;gap:10px}.zd-chart-legend>div{display:flex;align-items:center;gap:8px;font-size:12px;color:#526078}.zd-chart-legend i{width:9px;height:9px;border-radius:50%;flex:none}.zd-chart-legend strong{margin-left:auto;color:#111b37;font-size:12px}
+        .zd-dashboard .zd-maturity-row{display:flex;width:100%;align-items:center;justify-content:space-between;text-align:left;gap:12px;border:0;border-top:1px solid #edf0f6;background:white;padding:14px 0;color:#111b37}.zd-maturity-row strong,.zd-maturity-row small,.zd-account-summary strong,.zd-account-summary small{display:block}.zd-maturity-row small,.zd-account-summary small{font-size:12px;color:#64748b;margin-top:5px;overflow-wrap:anywhere}.zd-days{background:#fff0da;color:#a65a09;padding:6px 10px;border-radius:7px;font-size:12px;font-weight:700;white-space:nowrap}.zd-account-summary{display:flex;align-items:center;gap:18px;flex-wrap:wrap}.zd-account-summary>div{flex:1;min-width:130px}.zd-account-summary strong{font-size:14px;overflow-wrap:anywhere}
+        @media(max-width:1150px){.zd-dashboard-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.zd-charts-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+        @media(max-width:650px){.zd-charts-grid{grid-template-columns:1fr}.zd-dashboard .zd-summary-tile{padding:13px}.zd-summary-icon{display:none}.zd-summary-tile>strong{font-size:23px}}
         @media(prefers-reduced-motion:reduce){.zd-app .zd-button,.zd-app .zd-metric,.zd-app .zd-nav button,.zd-quick-link{transition:none}.zd-metric:hover{transform:none}}
 
         .zd-top-actions .zd-button,.zd-portfolio .zd-toolbar .zd-button,.zd-portfolio-tools .zd-button{font-size:12px;font-weight:650;padding:7px 12px;min-height:32px;line-height:1.4;border-radius:7px;gap:5px}.zd-top{min-height:68px;padding:12px 32px}.zd-top-actions{gap:7px}.zd-portfolio-tools .zd-search{font-size:13px;padding:8px 11px;min-height:34px}.zd-portfolio-tools{gap:9px}.zd-portfolio .zd-toolbar .zd-button.primary,.zd-top-actions .zd-button.primary{box-shadow:0 2px 6px #315aff18}
@@ -1089,11 +1131,19 @@ function LoanWorkspace({ onHome, onSignOut, user }) {
           {view==="dashboard" && <div className="zd-dashboard">
             <section className="zd-welcome"><div><div className="zd-eyebrow">YOUR LENDING WORKSPACE</div><h2>Manage loans with confidence.</h2><p>Create loan records, organize transaction details and prepare your closing documents in one place.</p><div className="zd-welcome-actions"><button className="zd-button zd-white" onClick={handleAddLoan}><WorkspaceIcon name="plus"/> New loan</button><button className="zd-button zd-ghost" onClick={()=>setView("loans")}>Browse loans <WorkspaceIcon name="arrow"/></button></div></div><div className="zd-hero-art" aria-hidden="true"><div className="zd-art-sheet back"/><div className="zd-art-sheet front"><WorkspaceIcon name="file"/><i/><i/><i/><span><WorkspaceIcon name="check"/></span></div></div></section>
             <div className="zd-overview-head"><div><div className="zd-eyebrow">AT A GLANCE</div><h2>Loan overview</h2></div><button className="zd-button" onClick={()=>setView("loans")}>View all loans <WorkspaceIcon name="arrow"/></button></div>
-            <div className="zd-kpi">
-              <div className="zd-card zd-metric"><div className="zd-metric-top"><span className="zd-stat-label">Saved loans</span><span className="zd-metric-icon"><WorkspaceIcon name="folder"/></span></div><div className="zd-stat">{loadingList?"—":loans.length}</div><div className="zd-hint">Records in your workspace</div></div>
-              <div className="zd-card zd-metric"><div className="zd-metric-top"><span className="zd-stat-label">Current loan</span><span className="zd-metric-icon purple"><WorkspaceIcon name="file"/></span></div><div className="zd-stat zd-stat-name">{activeId?labelInput||"New Loan":"None selected"}</div><div className="zd-hint">{activeId?(fields.STATE==="CA"?"California":"Florida")+" document workflow":"Select a saved loan to continue"}</div></div>
-              <div className="zd-card zd-metric"><div className="zd-metric-top"><span className="zd-stat-label">Reusable profiles</span><span className="zd-metric-icon green"><WorkspaceIcon name="users"/></span></div><div className="zd-stat">{profiles.length}</div><div className="zd-hint">Saved parties and company details</div></div>
+            <div className="zd-dashboard-kpis">
+              {[["Saved loans",loadingList?"—":loans.length,"All saved loan records","folder","blue"],["Recorded loan volume",dashboardBusy?"—":amountRows.length?dashboardMoney(totalAmount):loans.length?"—":"$0",`${amountRows.length} of ${loans.length} records with principal`,"file","green"],["Average interest rate",dashboardBusy||averageRate===null?"—":`${averageRate.toFixed(2)}%`,`${rateRows.length} records with valid rates · unweighted`,"check","purple"],["Maturing in 90 days",dashboardBusy?"—":upcomingLoans.length,"Based on recorded maturity dates","shield","orange"]].map(([label,value,desc,icon,tone])=><div className={`zd-card zd-summary-tile ${tone}`} key={label}><div className="zd-metric-top"><span>{label}</span><span className="zd-summary-icon"><WorkspaceIcon name={icon}/></span></div><strong>{value}</strong><small>{desc}</small></div>)}
             </div>
+            {portfolioMissing>0&&<div className="zd-card" role="status">Some loan details could not be loaded. Summaries may be incomplete. <button className="zd-button" onClick={()=>setPortfolioRetry(n=>n+1)}>Retry</button></div>}
+            <div className="zd-charts-grid">
+              {dashboardChart("Loans by state","GEOGRAPHIC MIX",stateMix,"Distribution of saved loan records")}
+              {dashboardChart("Maturity breakdown","LOAN TIMELINE",maturityMix,"Based on recorded maturity dates")}
+              {dashboardChart("Lien positions","LOAN STRUCTURE",positionMix,"First, second and other positions")}
+            </div>
+            <section className="zd-card zd-maturity-card"><div className="zd-toolbar"><div><div className="zd-eyebrow">NEXT 90 DAYS</div><h2>Upcoming maturities</h2><p className="zd-hint">Recorded dates only — not a servicing or payment status.</p></div><button className="zd-button" onClick={()=>{setPortfolioTab("upcoming");setLoanSearch("");setView("loans");}}>View loans <WorkspaceIcon name="arrow"/></button></div>
+              {dashboardBusy?<p className="zd-hint">Loading loan details…</p>:!upcomingLoans.length?<p className="zd-hint">No recorded maturities in the next 90 days.</p>:upcomingLoans.slice(0,5).map(r=><button type="button" className="zd-maturity-row" key={r.id} onClick={()=>openLoan(r.id)}><span><strong>{r.label||"Untitled loan"}</strong><small>{formatDate(r.maturity)} · {r.state||"State unspecified"}</small></span><span className="zd-days">{r.days===0?"Today":`${r.days} days`}</span></button>)}
+            </section>
+            <div className="zd-card zd-account-summary"><span className="zd-metric-icon green"><WorkspaceIcon name="users"/></span><div><strong>{accountName}</strong><small>{accountEmail}</small></div><div><strong>{profiles.length}</strong><small>Reusable profiles</small></div><div><strong>{activeId?labelInput||"New Loan":"None selected"}</strong><small>Current loan</small></div></div>
             <div className="zd-dashboard-grid"><section className="zd-card zd-recent"><div className="zd-toolbar"><div><h2>Recent loans</h2><p className="zd-hint">Continue working on your saved records.</p></div><button className="zd-button" onClick={()=>setView("loans")}>See all <WorkspaceIcon name="arrow"/></button></div>
               {loadingList?<p className="zd-empty">Loading your loans…</p>:loans.length===0?<div className="zd-empty"><WorkspaceIcon name="folder"/><p>No saved loans yet.</p><button className="zd-button primary" onClick={handleAddLoan}>Create your first loan</button></div>:<div className="zd-table-wrap"><table className="zd-table zd-recent-table"><thead><tr><th>Loan name</th><th>Record</th><th>Action</th></tr></thead><tbody>{loans.slice(0,6).map(l=><tr key={l.id}><td><div className="zd-loan-name"><span className="zd-file-icon"><WorkspaceIcon name="file"/></span><strong>{l.label||"Untitled loan"}</strong></div></td><td><span className="zd-record-pill">{l.id===activeId?"Current":"Saved"}</span></td><td><button className="zd-button zd-open" onClick={()=>openLoan(l.id)}>Open <WorkspaceIcon name="arrow"/></button></td></tr>)}</tbody></table></div>}
             </section><aside className="zd-card zd-quick"><h2>Quick actions</h2><p className="zd-hint">Pick up where you left off.</p>{[["plus","Create a loan","Start a new loan record",handleAddLoan],["folder","Browse loans","Find an existing transaction",()=>setView("loans")],["file","Loan information","Continue editing your current loan",()=>setView("information")]].map(([icon,title,desc,action])=><button type="button" className="zd-quick-link" key={title} onClick={action}><span className="zd-metric-icon"><WorkspaceIcon name={icon}/></span><span><strong>{title}</strong><small>{desc}</small></span><WorkspaceIcon name="arrow"/></button>)}<div className="zd-quick-note"><WorkspaceIcon name="shield"/><span>Review generated documents before use. During beta, use sample or redacted information.</span></div></aside></div>
