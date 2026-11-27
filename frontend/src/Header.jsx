@@ -319,7 +319,7 @@ export default function Header({
           z-index: 100;
           width: 100%;
           background: #ffffff;
-          border-top: 7px solid #10102f;
+          border-top: 0;
           color: var(--zap-ink);
           font-family: inherit;
           text-align: left;
@@ -723,7 +723,7 @@ export default function Header({
             border: 1px solid var(--zap-line);
             border-radius: 14px;
             box-shadow: 0 16px 40px rgba(14,16,53,.12);
-            max-height: calc(100dvh - 110px);
+            max-height: calc(100dvh - 160px);
             overflow-y: auto;
           }
 
@@ -780,7 +780,7 @@ export default function Header({
 
         @media (max-width: 600px) {
           .zap-nav-wrap {
-            border-top-width: 5px;
+            border-top-width: 0;
           }
 
           .zap-nav-wrap .zap-nav {
@@ -811,7 +811,40 @@ export default function Header({
           }
         }
 
+      
+        /* Beta announcement */
+        .zap-nav-wrap .zap-beta-banner {
+          width: 100%; min-height: 38px; padding: 8px 18px;
+          background: #101031; color: #fff;
+          display: flex; align-items: center; justify-content: center;
+          flex-wrap: wrap; gap: 10px; text-align: center;
+          font-size: 13px; font-weight: 500; line-height: 1.5;
+        }
+        .zap-nav-wrap .zap-beta-label {
+          background: #3cdb87; color: #101031; padding: 2px 9px;
+          border-radius: 5px; font-size: 10px; font-weight: 800;
+          letter-spacing: .08em;
+        }
+        .zap-nav-wrap .zap-beta-banner button {
+          background: transparent; border: 0; padding: 0;
+          color: #3cdb87; font-size: inherit; font-weight: 650;
+          cursor: pointer; line-height: inherit;
+        }
+        .zap-nav-wrap .zap-beta-banner button:hover { text-decoration: underline; }
+        .zap-nav-wrap .zap-beta-banner button:focus-visible { outline-color: #3cdb87; }
+        @media (max-width: 600px) {
+          .zap-nav-wrap .zap-beta-banner { font-size: 11px; gap: 6px; padding: 8px 12px; }
+        }
+
       `}</style>
+
+      <div className="zap-beta-banner">
+        <span className="zap-beta-label">BETA</span>
+        <span>ZapDocs beta testing is now open!</span>
+        <button type="button" onClick={openDemo}>
+          Request early access <span aria-hidden="true">→</span>
+        </button>
+      </div>
 
       <nav className="zap-nav" aria-label="Main navigation">
 

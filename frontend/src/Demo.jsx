@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 // Only public configuration belongs in VITE_ environment variables.
 const bookingUrl = (import.meta.env.VITE_DEMO_BOOKING_URL || "").trim();
@@ -27,19 +27,39 @@ const faqs = [
   ["What should I prepare before the meeting?", "Consider your monthly loan volume, the states where you operate and your current document preparation process. Please do not share confidential borrower information."],
   ["Can multiple members of my company attend?", "You are welcome to invite relevant members of your lending team to the walkthrough."],
 ];
-function MeetingIcon({ type }) {
-  return <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    {type === "clock" ? <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></> : type === "video" ? <><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/></> : <><circle cx="12" cy="7" r="4"/><path d="M4 21v-3a8 8 0 0 1 16 0v3"/></>}
-  </svg>;
-}
-
 export default function Demo({ onHome, onLaunch, onPricing, onDemo } = {}) {
   useEffect(() => {
     const previous = document.title;
     document.title = "Book a Demo | ZapDocs";
     return () => { document.title = previous; };
   }, []);
-  const emailLink = `mailto:${contactEmail}?subject=${encodeURIComponent("ZapDocs demo request")}&body=${encodeURIComponent("Hi ZapDocs,\n\nI'd like to request a demo.\n\nName:\nCompany:\nMonthly loan volume:\nPreferred times and time zone:\n")}`;
+  const [notice, setNotice] = useState("");
+
+  function handleDemoRequest(event) {
+    event.preventDefault();
+    if (!validEmail) {
+      setNotice("Demo email is not configured. Please use online scheduling if available.");
+      return;
+    }
+    const data = new FormData(event.currentTarget);
+    const get = (key) => String(data.get(key) || "").trim();
+    if (!get("firstName") || !get("lastName") || !get("email")) {
+      setNotice("Please enter your name and email address.");
+      return;
+    }
+    const body = [
+      "Hello ZapDocs,", "", "I would like to request a product demonstration.", "",
+      `Name: ${get("firstName")} ${get("lastName")}`,
+      `Email: ${get("email")}`,
+      `Company: ${get("company") || "Not provided"}`,
+      `Phone: ${get("phone") || "Not provided"}`,
+      `Interested in: ${get("interest") || "General demo"}`,
+      `Monthly loan volume: ${get("volume") || "Not provided"}`,
+      "", "Message:", get("message") || "No additional details."
+    ].join("\n");
+    setNotice("Your email app should open with your completed request. Send the email there to finish requesting your demo.");
+    window.location.href = `mailto:${contactEmail}?subject=${encodeURIComponent("ZapDocs demo request")}&body=${encodeURIComponent(body)}`;
+  }
 
   // The parent layout already renders Header. Do not render it here.
   return (
@@ -58,21 +78,29 @@ export default function Demo({ onHome, onLaunch, onPricing, onDemo } = {}) {
             </div>
             <div className="zd-demo-panel">
               <div className="zd-demo-card">
-                <div className="zd-demo-card-top">
-                  <div className="zd-demo-calendar-icon"><svg width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18m6 5 2 2 4-4"/></svg></div>
+                <div className="zd-demo-form-top">
+                  <div className="zd-demo-kicker">BOOK YOUR DEMONSTRATION</div>
                   <span className="zd-demo-card-tag">Complimentary demo</span>
                 </div>
-                <div className="zd-demo-kicker">BOOK YOUR DEMONSTRATION</div>
-                <h2>Let's talk about your lending workflow.</h2>
-                <p className="zd-demo-card-description">A one-on-one product walkthrough tailored to your private lending business.</p>
-                <div className="zd-demo-meeting-details">
-                  {[["clock", "30 minutes"], ["video", "Online meeting"], ["user", "One-on-one walkthrough"]].map(([type, label]) => <div key={type}><MeetingIcon type={type}/><span>{label}</span></div>)}
-                </div>
-                <div className="zd-demo-divider"/>
-                <h3 className="zd-demo-booking-title">Schedule your walkthrough</h3>
-                <p className="zd-demo-booking-description">Find a convenient time to explore ZapDocs and discuss your business requirements.</p>
-                {validBooking ? <a className="zd-demo-cta" href={bookingUrl} target="_blank" rel="noopener noreferrer">Choose a Time <span>↗</span></a> : validEmail ? <a className="zd-demo-cta" href={emailLink}>Request a Demo by Email <span>→</span></a> : <div className="zd-demo-unavailable" role="status">Online scheduling is not available yet. Please check back soon.</div>}
-                <div className="zd-demo-note">No payment or account required. Please do not share confidential borrower information when booking.</div>
+                <h2>Request a demo</h2>
+                <p className="zd-demo-card-description">Tell us a little about your lending business. We'll work with you to arrange a personalized walkthrough.</p>
+                <form className="zd-demo-form" onSubmit={handleDemoRequest}>
+                  <div className="zd-demo-form-grid">
+                    <label>First name <span>*</span><input name="firstName" autoComplete="given-name" placeholder="First name" maxLength={80} required /></label>
+                    <label>Last name <span>*</span><input name="lastName" autoComplete="family-name" placeholder="Last name" maxLength={80} required /></label>
+                    <label className="zd-demo-form-wide">Work email <span>*</span><input type="email" name="email" autoComplete="email" placeholder="you@company.com" maxLength={254} required /></label>
+                    <label>Company<input name="company" autoComplete="organization" placeholder="Company name" maxLength={120} /></label>
+                    <label>Phone<input type="tel" name="phone" autoComplete="tel" placeholder="(555) 000-0000" maxLength={40} /></label>
+                    <label className="zd-demo-form-wide">I'm interested in<select name="interest" defaultValue=""><option value="">Select one...</option><option>Private lending document generation</option><option>Mortgage brokerage workflows</option><option>Servicing and lender documents</option><option>Pricing and beta access</option><option>General product demonstration</option><option>Other</option></select></label>
+                    <label className="zd-demo-form-wide">Monthly loan volume<select name="volume" defaultValue=""><option value="">Select monthly volume...</option><option>1–5 loans</option><option>6–10 loans</option><option>11–25 loans</option><option>26–50 loans</option><option>51+ loans</option></select></label>
+                    <label className="zd-demo-form-wide">Message<textarea name="message" rows={4} maxLength={1000} placeholder="Tell us about your lending operation and how we can help..." /></label>
+                  </div>
+                  <button className="zd-demo-cta zd-demo-submit" type="submit" disabled={!validEmail}>Request a Demo <span aria-hidden="true">→</span></button>
+                  {notice && <p className="zd-demo-form-notice" role="status">{notice}</p>}
+                  {!validEmail && <p className="zd-demo-form-notice" role="status">Email requests are not configured yet.</p>}
+                  {validBooking && <a className="zd-demo-schedule-link" href={bookingUrl} target="_blank" rel="noopener noreferrer">Prefer to choose a time directly? Schedule online ↗</a>}
+                  <p className="zd-demo-note">Opens your email app to send your request. No payment or account required. Please do not include confidential borrower information. <a href="/privacy">Privacy policy</a>.</p>
+                </form>
               </div>
               <div className="zd-demo-panel-footer">Built for private lending professionals.</div>
             </div>
@@ -138,6 +166,30 @@ export default function Demo({ onHome, onLaunch, onPricing, onDemo } = {}) {
         @media(max-width:800px){.zd-demo-container{width:calc(100% - 36px)}.zd-demo-hero-grid,.zd-demo-faq-grid{grid-template-columns:1fr}.zd-demo-hero{padding:60px 0}.zd-demo-content h1{font-size:52px;letter-spacing:-2px}.zd-demo-panel{max-width:600px;width:100%;margin:0 auto}.zd-demo-benefit-grid,.zd-demo-industry-grid{grid-template-columns:1fr}.zd-demo-benefit-grid{gap:30px}.zd-demo-section,.zd-demo-muted-section{padding:60px 0}.zd-demo-bottom-section{padding-bottom:50px}}
         @media(max-width:480px){.zd-demo-content h1{font-size:44px}.zd-demo-agenda-grid{grid-template-columns:1fr}.zd-demo-card{padding:21px}.zd-demo-card h2{font-size:27px}.zd-demo-agenda-card,.zd-demo-industry-card{padding:23px}.zd-demo-bottom-cta{padding:45px 20px}}
         @media(prefers-reduced-motion:reduce){.zd-demo-agenda-card,.zd-demo-industry-card,.zd-demo-cta,.zd-demo-bottom-primary,.zd-demo-bottom-secondary{transition:none}}
+
+        .zd-demo-hero-grid{align-items:start;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:64px}
+        .zd-demo-content{padding-top:22px}
+        .zd-demo-form-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+        .zd-demo-form-top .zd-demo-kicker{margin:0}
+        .zd-demo-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:17px 15px;margin-bottom:23px}
+        .zd-demo-form-wide{grid-column:1/-1}
+        .zd-demo-form label{display:block;min-width:0;color:#25344e;font-size:13px;font-weight:650;line-height:1.5}
+        .zd-demo-form label>span{color:#3d63f5}
+        .zd-demo-form input,.zd-demo-form select,.zd-demo-form textarea{display:block;width:100%;min-width:0;margin-top:7px;padding:12px 13px;border:1px solid #d6deeb;border-radius:9px;background:#fff;color:#101c32;font:inherit;font-weight:400;outline:none;transition:border-color .18s,box-shadow .18s}
+        .zd-demo-form input,.zd-demo-form select{min-height:46px}
+        .zd-demo-form textarea{resize:vertical;min-height:104px}
+        .zd-demo-form input::placeholder,.zd-demo-form textarea::placeholder{color:#8491a4}
+        .zd-demo-form input:focus,.zd-demo-form select:focus,.zd-demo-form textarea:focus{border-color:#3d63f5;box-shadow:0 0 0 3px #3d63f51a}
+        .zd-demo-submit{background:#35d47f;border-color:#35d47f;color:#10143b;cursor:pointer;font-family:inherit}
+        .zd-demo-submit:hover:not(:disabled){background:#27c36e;color:#10143b;border-color:#27c36e}
+        .zd-demo-submit:disabled{opacity:.55;cursor:not-allowed}
+        .zd-demo-submit:focus-visible{outline:3px solid #3d63f5;outline-offset:3px}
+        .zd-demo-form-notice{font-size:13px;line-height:1.6;color:#526278;background:#f4f7fc;border-radius:8px;padding:12px;margin:12px 0 0}
+        .zd-demo-schedule-link{display:block;text-align:center;font-size:12px;font-weight:650;color:#3d63f5;margin-top:15px}
+        .zd-demo-note a{color:#3d63f5}
+        @media(max-width:800px){.zd-demo-hero-grid{grid-template-columns:1fr;gap:35px}.zd-demo-content{padding-top:0}}
+        @media(max-width:480px){.zd-demo-form-grid{grid-template-columns:1fr;gap:14px}.zd-demo-form-top{gap:8px}}
+        @media(prefers-reduced-motion:reduce){.zd-demo-form input,.zd-demo-form select,.zd-demo-form textarea{transition:none}}
       `}</style>
     </div>
   );

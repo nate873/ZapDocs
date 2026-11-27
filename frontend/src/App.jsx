@@ -55,8 +55,11 @@ async function apiJson(path, options = {}) {
 }
 
 import loanScreen from "./assets/loanscreen.png";
+import loanScreen2 from "./assets/loanscreen2.png";
 import happyPeople from "./assets/happypeople.webp";
 import notePreview from "./assets/3333.png";
+import mortgagePreview from "./assets/screenshot2.png";
+import deedPreview from "./assets/screenshot3.png";
 
 const FIELD_GROUPS = [
   {
@@ -835,7 +838,14 @@ function LoanWorkspace({ onHome, onSignOut, user }) {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Loan_${loanNumber}_Documents.zip`;
+      // Use the actual response format; Florida returns a standalone Word file.
+      const contentType = (res.headers.get("Content-Type") || "").toLowerCase();
+      const isDocx = contentType.includes("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      const isZip = contentType.includes("application/zip");
+      const isFlorida = String(fields.STATE || "FL").trim().toUpperCase() === "FL";
+      a.download = (isDocx || (!isZip && isFlorida))
+        ? `Full_Set_Loan_${loanNumber}.docx`
+        : `Loan_${loanNumber}_Documents.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1377,6 +1387,74 @@ function LoanWorkspace({ onHome, onSignOut, user }) {
       </main>
     </div>
   );
+}
+
+function ZapImpactStats() {
+  const [started, setStarted] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [node, setNode] = useState(null);
+  useEffect(() => {
+    if (!node || started) return;
+    if (!('IntersectionObserver' in window)) { setStarted(true); return; }
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) { setStarted(true); observer.disconnect(); }
+    }, { threshold: 0.15 });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [node, started]);
+  useEffect(() => {
+    if (!started) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setProgress(1); return; }
+    let frame;
+    const start = performance.now();
+    const tick = now => {
+      const t = Math.min(1, (now-start)/1600);
+      setProgress(1-Math.pow(1-t,3));
+      if(t<1) frame=requestAnimationFrame(tick);
+    };
+    frame=requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [started]);
+  const stats = [[12000,'$','','Estimated annual labor savings','#2867ff'],[240,'','','Estimated annual hours saved','#08b8c5'],[50,'','+','Document templates available*','#bd47f2'],[60,'','+','Loan data fields supported','#ff735f']];
+  return <section ref={setNode} className="zi-stats" aria-label="ZapDocs platform statistics">
+    <style>{`
+      .zi-stats{max-width:1220px;margin:auto;padding:44px 28px 52px;font-family:inherit;box-sizing:border-box}
+      .zi-stat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0}
+      .zi-stat{padding:5px 25px;border-left:1px solid #e0e5ef;min-width:0}
+      .zi-stat:first-child{border-left:0;padding-left:0}
+      .zi-stat strong{display:block;font-size:clamp(34px,4.6vw,64px);line-height:1.05;letter-spacing:-.055em;font-weight:800;font-variant-numeric:tabular-nums}
+      .zi-stat span{display:block;font-size:17px;line-height:1.4;font-weight:700;color:#10143b;margin-top:8px}
+      .zi-stats p{font-size:12px;line-height:1.6;color:#64748b;margin:18px 0 0}
+      @media(max-width:760px){.zi-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:24px}.zi-stat:nth-child(odd){border-left:0;padding-left:0}.zi-stat{padding-right:8px}.zi-stat span{font-size:14px}}
+    `}</style>
+    <div className="zi-stat-grid">{stats.map(([n,prefix,suffix,label,color])=><div className="zi-stat" key={label}><strong style={{color}} aria-label={`${prefix}${n.toLocaleString('en-US')}${suffix}`}><span aria-hidden="true" style={{display:'inline',font:'inherit',color:'inherit',margin:0}}>{prefix}{Math.round(n*progress).toLocaleString('en-US')}{suffix}</span></strong><span>{label}</span></div>)}</div>
+    <p>Illustrative estimate: 10 loans/month × 2 hours saved per loan × $50/hour. Gross labor savings before software costs; actual results vary. *Template count subject to confirmation.</p>
+  </section>;
+}
+
+function ZapAnimatedOverview() {
+  const cards = [['Saved loans','12','#e9eeff','#315cff'],['Recorded loan volume','$2.6M','#d9f7e9','#078359'],['Average interest rate','11.86%','#f0e6ff','#8439d7'],['Maturing in 90 days','4','#fff0d9','#ad610c']];
+  return <div className="zi-visual" aria-label="Illustrative ZapDocs loan dashboard">
+    <style>{`
+      .zi-visual{position:relative;padding:26px 18px;background:linear-gradient(145deg,#e8efff,#e0f8ed 75%);border-radius:28px;min-width:0;box-sizing:border-box;overflow:hidden}
+      .zi-panel{background:white;border:1px solid #e3e9f2;border-radius:18px;padding:18px;box-shadow:0 18px 38px #14264c20;animation:zi-float 6s ease-in-out infinite;min-width:0}
+      .zi-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:15px;color:#10143b}.zi-head strong{font-size:20px;letter-spacing:-.04em}.zi-head small{font-size:10px;color:#64748b;background:#f1f5f9;padding:5px 8px;border-radius:20px}
+      .zi-mini-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.zi-mini{padding:13px;border-radius:12px;min-width:0}.zi-mini span{display:block;font-size:10px;font-weight:700;line-height:1.4}.zi-mini strong{display:block;font-size:clamp(19px,2vw,28px);letter-spacing:-.04em;color:#15243c;margin-top:12px}
+      .zi-charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.zi-chart{border:1px solid #e4e9f2;border-radius:12px;padding:12px;min-width:0;color:#10143b}.zi-chart b{display:block;font-size:12px;margin-bottom:12px}.zi-chart small{font-size:10px;color:#64748b;display:block;text-align:center;margin-top:9px}
+      .zi-ring{width:100px;height:100px;max-width:100%;margin:0 auto;position:relative;display:grid;place-items:center}.zi-ring svg{width:100%;height:100%;transform:rotate(-90deg)}.zi-ring circle.zi-arc{animation:zi-ring-reveal 5s ease-in-out infinite}.zi-ring strong{position:absolute;font-size:22px;color:#10143b}
+      .zi-bars{height:100px;display:flex;align-items:flex-end;gap:7px;border-bottom:1px solid #dce3ee;padding:0 2px}.zi-bars i{flex:1;border-radius:5px 5px 0 0;transform-origin:bottom;animation:zi-bar-rise 3s ease-in-out infinite}
+      @keyframes zi-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+      @keyframes zi-bar-rise{0%,100%{transform:scaleY(.88)}50%{transform:scaleY(1)}}
+      @keyframes zi-ring-reveal{0%,100%{opacity:.8}50%{opacity:1}}
+      @media(prefers-reduced-motion:reduce){.zi-panel,.zi-bars i,.zi-ring circle.zi-arc{animation:none}}
+      @media(max-width:420px){.zi-visual{padding:15px 9px}.zi-panel{padding:10px}.zi-chart{padding:8px}.zi-mini{padding:9px}}
+    `}</style>
+    <div className="zi-panel"><div className="zi-head"><strong>Loan overview</strong><small>Sample data</small></div>
+      <div className="zi-mini-grid">{cards.map(([label,value,bg,color])=><div className="zi-mini" style={{background:bg,color}} key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
+      <div className="zi-charts"><div className="zi-chart"><b>Loans by state</b><div className="zi-ring"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="39" fill="none" stroke="#e1e8f0" strokeWidth="17"/><circle className="zi-arc" cx="50" cy="50" r="39" fill="none" stroke="#315cff" strokeWidth="17" strokeDasharray="143 245"/><circle className="zi-arc" cx="50" cy="50" r="39" fill="none" stroke="#a33ef0" strokeWidth="17" strokeDasharray="102 245" strokeDashoffset="-143"/></svg><strong>12</strong></div><small>7 Florida · 5 California</small></div>
+      <div className="zi-chart"><b>Document activity</b><div className="zi-bars" aria-hidden="true">{[38,60,49,78,94].map((height,i)=><i key={i} style={{height:`${height}%`,background:['#315cff','#ff735f','#bd47f2','#08b8c5','#315cff'][i],animationDelay:`${i*.18}s`}}/>)}</div><small>Illustrative weekly activity</small></div></div>
+    </div>
+  </div>;
 }
 
 function ZapDocsLanding({ onLaunch, onLegal }) {
@@ -2137,6 +2215,28 @@ function ZapDocsLanding({ onLaunch, onLegal }) {
           line-height: 1.7;
         }
 
+        .zl-process { padding: 24px 0 8px; }
+        .zl-process-intro { max-width: 660px; margin-bottom: 42px; }
+        .zl-process-intro h3 { margin: 0 0 12px; font-size: clamp(28px, 3.2vw, 42px); letter-spacing: -.045em; line-height: 1.12; }
+        .zl-process-intro p { margin: 0; color: var(--zl-muted); font-size: 16px; line-height: 1.65; }
+        .zl-process-track { position: relative; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 28px; padding: 0; margin: 0; list-style: none; }
+        .zl-process-track::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: #d5dfea; }
+        .zl-process-track::after { content: ""; position: absolute; top: 0; left: 0; right: calc((100% - 84px) / 4); height: 2px; background: var(--zl-blue); box-shadow: 0 0 9px rgba(63,109,246,.35); animation: zlProcessReveal 1.4s ease-out both; transform-origin: left; }
+        @keyframes zlProcessReveal { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+        .zl-process-step { position: relative; padding-top: 26px; min-width: 0; }
+        .zl-process-step::before { content: ""; position: absolute; top: -4px; left: 0; width: 10px; height: 10px; border-radius: 50%; background: var(--zl-blue); box-shadow: 0 0 0 4px #e1e9ff; z-index: 1; }
+        .zl-process-step:last-child::before { background: #36ce80; box-shadow: 0 0 0 4px #d8f3e5; }
+        .zl-process-icon { width: 46px; height: 46px; border: 1px solid #c5d4ff; background: #edf2ff; color: var(--zl-blue); border-radius: 12px; display: grid; place-items: center; margin-bottom: 18px; transition: transform .2s ease, box-shadow .2s ease; }
+        .zl-process-icon svg { width: 24px; height: 24px; }
+        .zl-process-step:last-child .zl-process-icon { background: #e1f7eb; border-color: #b8e8ce; color: #168452; }
+        .zl-process-step:hover .zl-process-icon { transform: translateY(-3px); box-shadow: 0 8px 18px rgba(63,109,246,.12); }
+        .zl-process-number { color: var(--zl-blue); font-size: 12px; font-weight: 800; letter-spacing: .08em; }
+        .zl-process-step h4 { margin: 9px 0 9px; font-size: 19px; line-height: 1.25; letter-spacing: -.025em; color: var(--zl-ink); }
+        .zl-process-step p { margin: 0; color: var(--zl-muted); font-size: 14px; line-height: 1.65; }
+        @media (max-width: 800px) { .zl-process-track { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 30px 24px; } .zl-process-track::before, .zl-process-track::after { display: none; } .zl-process-step { border-top: 2px solid #c5d4ff; } }
+        @media (max-width: 480px) { .zl-process-track { grid-template-columns: 1fr; gap: 24px; } .zl-process-step { padding-top: 18px; } }
+        @media (prefers-reduced-motion: reduce) { .zl-process-track::after { animation: none; } .zl-process-icon { transition: none; } }
+
         .zl-feature-grid {
           display: grid;
           grid-template-columns: repeat(3, 1fr);
@@ -2239,6 +2339,47 @@ function ZapDocsLanding({ onLaunch, onLegal }) {
           right: -30px;
           background: rgba(255,255,255,.5);
         }
+        .zl-doc-stage.zap-document-gallery {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
+          place-items: center;
+          min-height: 480px;
+          padding: 32px 12px;
+          border-radius: 30px;
+          background: #d5f5e8;
+          isolation: isolate;
+          overflow: hidden;
+        }
+        .zap-document-gallery figure {
+          grid-area: 1 / 1;
+          position: relative;
+          width: 49%;
+          min-width: 0;
+          margin: 0;
+          z-index: 2;
+          transform: translateX(var(--doc-x)) translateY(var(--doc-y)) rotate(var(--doc-angle));
+          transition: transform .25s ease;
+        }
+        .zap-document-gallery figure:nth-of-type(1) { --doc-x: -46%; --doc-y: 9px; --doc-angle: -7deg; }
+        .zap-document-gallery figure:nth-of-type(2) { --doc-x: 0%; --doc-y: -16px; --doc-angle: -1deg; z-index: 4; }
+        .zap-document-gallery figure:nth-of-type(3) { --doc-x: 46%; --doc-y: 9px; --doc-angle: 7deg; z-index: 3; }
+        .zap-document-gallery figure:hover { transform: translateX(var(--doc-x)) translateY(calc(var(--doc-y) - 10px)) rotate(var(--doc-angle)) scale(1.035); z-index: 5; }
+        .zap-document-gallery figure img {
+          display: block;
+          width: 100%;
+          aspect-ratio: 8.5 / 11;
+          object-fit: contain;
+          background: #fff;
+          border: 1px solid #d9e0e4;
+          border-radius: 5px;
+          box-shadow: 0 16px 32px rgba(26,48,63,.21);
+        }
+        @media (max-width: 520px) {
+          .zl-doc-stage.zap-document-gallery { padding: 24px 8px; min-height: 290px; }
+          .zap-document-gallery figure { width: 49%; }
+        }
+        @media (prefers-reduced-motion: reduce) { .zap-document-gallery figure { transition: none; } }
+
         .zl-real-note {
           position: relative;
           z-index: 2;
@@ -2274,6 +2415,20 @@ function ZapDocsLanding({ onLaunch, onLegal }) {
           font-size: 12px;
           font-weight: 900;
         }
+
+        .zl-library-panel {
+          min-width: 0;
+          padding: clamp(20px, 3vw, 32px);
+          border: 1px solid rgba(158, 178, 255, .26);
+          border-radius: 20px;
+          background: rgba(255,255,255,.045);
+          box-shadow: 0 22px 55px rgba(0,0,0,.12);
+        }
+        .zl-library-heading { color: #fff; font-size: 15px; font-weight: 750; margin-bottom: 20px; }
+        .zl-library-pills { display: flex; flex-wrap: wrap; gap: 9px; list-style: none; padding: 0; margin: 0; }
+        .zl-library-pills li { border: 1px solid rgba(166,185,255,.3); background: rgba(255,255,255,.045); color: #f1f4ff; border-radius: 999px; padding: 9px 13px; font-size: 13px; font-weight: 550; line-height: 1.4; max-width: 100%; transition: background .2s, border-color .2s; }
+        .zl-library-pills li:hover { background: rgba(63,109,246,.18); border-color: #7799ff; }
+        .zl-library-note { margin: 20px 0 0; color: #b7c5df; font-size: 12px; line-height: 1.6; }
 
         .zl-output-panel {
           border-radius: 20px;
@@ -2737,6 +2892,44 @@ function ZapDocsLanding({ onLaunch, onLegal }) {
         .zl-mobile-menu {max-height:calc(100dvh - 100px);overflow-y:auto;}
         @media(max-width:1100px) and (min-width:931px) { .zd-mega {gap:12px;} .zl-nav {gap:14px;padding:0 16px;} .zl-brand {min-width:180px;} .zl-nav-cta {padding:0 18px;} }
         @media(prefers-reduced-motion:reduce) { .zd-mega-panel {animation:none;} .zd-mega-trigger::after,.zd-mega-trigger svg,.zd-mega-arrow {transition:none;} }
+        /* Large, diagonally staggered product previews. */
+        .zl-hero-visual .zl-hero-screen-pair {
+          position: relative;
+          z-index: 2;
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          margin: 86px 4% 32px 12%;
+        }
+        .zl-hero-screen-pair .zl-product-window {
+          position: relative;
+          inset: auto;
+          width: 83%;
+          min-width: 0;
+          border-radius: 15px;
+          animation: none;
+          box-shadow: 0 18px 45px rgba(24,50,48,.23);
+        }
+        .zl-hero-screen-pair .zl-product-window:nth-child(2) {
+          align-self: flex-end;
+          margin-top: -18px;
+          z-index: 3;
+        }
+        .zl-hero-screen-pair .zl-window-bar { height: 30px; padding: 0 10px; gap: 5px; }
+        .zl-hero-screen-pair .zl-window-url { margin-left: 5px; min-width: 0; white-space: nowrap; overflow: hidden; }
+        .zl-hero-screen-pair img { display: block; width: 100%; height: auto; background: #fff; }
+        .zl-hero-visual .zl-float-badge { left: 14%; top: 32px; }
+        @media (max-width: 930px) {
+          .zl-hero-visual .zl-hero-screen-pair { margin: 86px 5% 32px; }
+          .zl-hero-visual .zl-float-badge { left: 5%; }
+          .zl-hero-screen-pair .zl-product-window { max-width: 620px; }
+        }
+        @media (max-width: 620px) {
+          .zl-hero-visual { min-height: 0; }
+          .zl-hero-visual .zl-hero-screen-pair { margin: 72px 5% 24px; }
+          .zl-hero-screen-pair .zl-product-window { width: 94%; }
+          .zl-hero-screen-pair .zl-product-window:nth-child(2) { margin-top: 12px; }
+        }
 `}</style>
 
       <Header onLaunch={onLaunch} />
@@ -2764,79 +2957,32 @@ function ZapDocsLanding({ onLaunch, onLegal }) {
 
               <div className="zl-hero-visual" aria-label="ZapDocs product preview">
                 <div className="zl-float-badge">Loan ready to generate</div>
-                <div className="zl-product-window">
-                  <div className="zl-window-bar">
-                    <span className="zl-window-dot" /><span className="zl-window-dot" /><span className="zl-window-dot" />
-                    <div className="zl-window-url">app.zapdocs.com / loans</div>
-                  </div>
-                  <img
-                    src={loanScreen}
-                    alt="Actual ZapDocs loan workspace"
-                    style={{
-                      width: "100%",
-                      display: "block",
-                      height: "auto",
-                      background: "#fff",
-                    }}
-                  />
+                <div className="zl-hero-screen-pair">
+                  {[
+                    [loanScreen, "Dashboard", "ZapDocs loan dashboard"],
+                    [loanScreen2, "Loan information", "ZapDocs loan information editor"],
+                  ].map(([src, label, alt]) => (
+                    <div className="zl-product-window" key={label}>
+                      <div className="zl-window-bar">
+                        <span className="zl-window-dot" /><span className="zl-window-dot" /><span className="zl-window-dot" />
+                        <div className="zl-window-url">{label}</div>
+                      </div>
+                      <img src={src} alt={alt} />
+                    </div>
+                  ))}
                 </div>
 
-                <div className="zl-floating-card zl-float-output">
-                  <div className="zl-float-kicker">Document package</div>
-                  <div className="zl-float-title">Generated outputs</div>
-                  <div className="zl-donut" />
-                </div>
+
               </div>
             </div>
           </div>
         </section>
 
-        <section className="zl-trust" aria-label="ZapDocs platform statistics">
-          <div className="zl-shell">
-            <div className="zl-trust-inner">
-              <div className="zl-trust-cell">
-                <div className="zl-stat-number">2</div>
-                <div className="zl-stat-label">State-specific lending workflows</div>
-              </div>
-              <div className="zl-trust-cell">
-                <div className="zl-stat-number">50+</div>
-                <div className="zl-stat-label">Loan data fields in one workspace</div>
-              </div>
-              <div className="zl-trust-cell">
-                <div className="zl-stat-number">3</div>
-                <div className="zl-stat-label">Document generation options</div>
-              </div>
-              <div className="zl-trust-cell">
-                <div className="zl-stat-number">1</div>
-                <div className="zl-stat-label">Reusable loan record per deal</div>
-              </div>
-            </div>
-          </div>
-        </section>
+        <ZapImpactStats />
 
         <section className="zl-connect" id="teams">
           <div className="zl-connect-grid">
-            <div className="zl-connect-media">
-              <div className="zl-connect-photo-wrap">
-                <img
-                  className="zl-connect-photo"
-                  src={happyPeople}
-                  alt="Business professionals reviewing a deal together"
-                />
-              </div>
-
-              <div className="zl-connect-shape" aria-hidden="true" />
-
-              <div className="zl-connect-card">
-                <div className="zl-connect-card-head">
-                  <strong>Active loan file</strong>
-                  <span className="zl-connect-ready">Ready</span>
-                </div>
-                <div className="zl-connect-card-row"><span>Loan record</span><strong>Saved</strong></div>
-                <div className="zl-connect-card-row"><span>State workflow</span><strong>Selected</strong></div>
-                <div className="zl-connect-card-row"><span>Document package</span><strong>Generate</strong></div>
-              </div>
-            </div>
+            <ZapAnimatedOverview />
 
             <div className="zl-connect-copy">
               <div className="zl-eyebrow">Built for private lending teams</div>
@@ -2866,25 +3012,33 @@ function ZapDocsLanding({ onLaunch, onLegal }) {
               <p className="zl-section-lead">Keep the data your documents depend on in one place, then generate the right set of files from that same record whenever the deal changes.</p>
             </div>
 
-            <div className="zl-feature-grid">
-              <article className="zl-feature-card">
-                <div className="zl-feature-icon">01</div>
-                <h3>Capture the deal once.</h3>
-                <p>Store loan terms, dates, property information, borrower details, lender data and payment schedules together.</p>
-                <div className="zl-mini-ui"><div className="zl-mini-row"><span>Loan Amount</span><strong>$425,000</strong></div><div className="zl-mini-row"><span>Interest Rate</span><strong>9.50%</strong></div><div className="zl-mini-row"><span>Property State</span><strong>CA</strong></div></div>
-              </article>
-              <article className="zl-feature-card">
-                <div className="zl-feature-icon">02</div>
-                <h3>Match the loan.</h3>
-                <p>Switch between state workflows and maintain custom payment schedules without rebuilding the file from scratch.</p>
-                <div className="zl-mini-ui"><div className="zl-mini-row"><span>California</span><span className="zl-mini-tag">Deed of Trust</span></div><div className="zl-mini-row"><span>Florida</span><span className="zl-mini-tag">Mortgage</span></div><div className="zl-mini-row"><span>Payment rows</span><strong>Custom</strong></div></div>
-              </article>
-              <article className="zl-feature-card">
-                <div className="zl-feature-icon">03</div>
-                <h3>Generate the package.</h3>
-                <p>Create the complete package or pull the specific lender-facing documents your transaction needs.</p>
-                <div className="zl-mini-ui"><div className="zl-mini-row"><span>Full loan package</span><strong>.ZIP</strong></div><div className="zl-mini-row"><span>Lender instructions</span><strong>.DOCX</strong></div><div className="zl-mini-row"><span>Lender disclosure</span><strong>.DOCX</strong></div></div>
-              </article>
+            <div className="zl-process" aria-label="How ZapDocs works">
+            <ol className="zl-process-track">
+              <li className="zl-process-step">
+                <div className="zl-process-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20H4V4h12v5M10 14l8-8 3 3-8 8-4 1z"/></svg></div>
+                <span className="zl-process-number">01</span>
+                <h4>Enter the deal</h4>
+                <p>Add borrower and lender details, property information, loan terms and payment schedules.</p>
+              </li>
+              <li className="zl-process-step">
+                <div className="zl-process-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v17M5 21h14M4 7h16M6 7l-4 8h8L6 7zm12 0-4 8h8l-4-8z"/></svg></div>
+                <span className="zl-process-number">02</span>
+                <h4>Match the state</h4>
+                <p>Choose Florida or California to use the corresponding mortgage or deed of trust workflow.</p>
+              </li>
+              <li className="zl-process-step">
+                <div className="zl-process-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="7" y="3" width="13" height="16" rx="2"/><path d="M4 7v14h12M10 8h7M10 12h7M10 15h4"/></svg></div>
+                <span className="zl-process-number">03</span>
+                <h4>Generate documents</h4>
+                <p>Build the closing package or available individual lender documents from your saved loan data.</p>
+              </li>
+              <li className="zl-process-step">
+                <div className="zl-process-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></svg></div>
+                <span className="zl-process-number">04</span>
+                <h4>Download and review</h4>
+                <p>Download your files, review them with your closing team and prepare for closing.</p>
+              </li>
+            </ol>
             </div>
           </div>
         </section>
@@ -2901,8 +3055,16 @@ function ZapDocsLanding({ onLaunch, onLegal }) {
               </div>
             </div>
 
-            <div className="zl-doc-stage" aria-label="Example promissory note produced by ZapDocs">
-              <img className="zl-real-note" src={notePreview} alt="Sample promissory note" loading="lazy" />
+            <div className="zl-doc-stage zap-document-gallery" aria-label="Examples of ZapDocs loan documents">
+              {[
+                [notePreview, "Secured Note"],
+                [mortgagePreview, "Florida Mortgage"],
+                [deedPreview, "California Deed of Trust"],
+              ].map(([src, label]) => (
+                <figure key={label}>
+                  <img src={src} alt={`Example ${label}`} loading="lazy" />
+                </figure>
+              ))}
             </div>
           </div>
         </section>
@@ -2910,21 +3072,27 @@ function ZapDocsLanding({ onLaunch, onLegal }) {
         <section className="zl-section zl-section-dark" id="outputs">
           <div className="zl-section-inner zl-dark-grid">
             <div>
-              <div className="zl-eyebrow">Document output</div>
-              <h2>Generate the file that is ready to move forward.</h2>
-              <p className="zl-section-lead">The latest loan data stays behind each output, so document creation becomes a repeatable operation instead of a manual editing project.</p>
+              <div className="zl-eyebrow">Document library</div>
+              <h2>One loan record. A complete closing package.</h2>
+              <p className="zl-section-lead" style={{ marginLeft: 0, marginTop: 22 }}>Prepare state-specific private lending documents from the same transaction data, without starting from scratch for every agreement.</p>
               <div className="zl-dark-list">
-                <div className="zl-dark-item"><span className="zl-dark-check">✓</span><span>Full loan-document package from the active loan record.</span></div>
-                <div className="zl-dark-item"><span className="zl-dark-check">✓</span><span>Separate lender instructions when the full package is not needed.</span></div>
-                <div className="zl-dark-item"><span className="zl-dark-check">✓</span><span>California lender disclosure generation from the same deal data.</span></div>
+                <div className="zl-dark-item"><span className="zl-dark-check">✓</span><span>Florida and California closing packages.</span></div>
+                <div className="zl-dark-item"><span className="zl-dark-check">✓</span><span>Separate servicing agreements and lender disclosures where applicable.</span></div>
               </div>
             </div>
-
-            <div className="zl-output-panel">
-              <div className="zl-output-head"><span>Generated documents</span><span className="zl-ready">Ready</span></div>
-              <div className="zl-file-row"><div className="zl-file-icon">ZIP</div><div><div className="zl-file-name">Loan_2026-104_Documents.zip</div><div className="zl-file-meta">Complete package</div></div><div className="zl-file-action">Download</div></div>
-              <div className="zl-file-row"><div className="zl-file-icon">DOC</div><div><div className="zl-file-name">Lender_Instructions_Loan_2026-104.docx</div><div className="zl-file-meta">Lender document</div></div><div className="zl-file-action">Download</div></div>
-              <div className="zl-file-row"><div className="zl-file-icon">DOC</div><div><div className="zl-file-name">Lender_Disclosure_Loan_2026-104.docx</div><div className="zl-file-meta">California disclosure</div></div><div className="zl-file-action">Download</div></div>
+            <div className="zl-library-panel">
+              <div className="zl-library-heading">Closing &amp; lender documents</div>
+              <ul className="zl-library-pills" aria-label="Document types">
+                {[
+                  "Promissory Notes", "Deeds of Trust", "Mortgages",
+                  "Agreements to Procure Lender", "Security Agreements",
+                  "Guaranties", "Oral Disclosures", "Servicing Agreements",
+                  "Lender Disclosures", "Key Provisions Summaries",
+                  "Arbitration Agreements", "Compliance Agreements",
+                  "Default Rate Addenda"
+                ].map(name => <li key={name}>{name}</li>)}
+              </ul>
+              <p className="zl-library-note">Document availability varies by state and package. Some agreements and addenda may be included within the combined closing document rather than as separate files.</p>
             </div>
           </div>
         </section>
